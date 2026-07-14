@@ -27,15 +27,25 @@ export default function Canvas({
   pan,
   zoom,
   onPanChange,
-  onZoomChange,
+  onViewChange,
   editingGroupId,
   onEditGroup,
 }) {
   const stageRef = useRef(null)
   const [spaceDown, setSpaceDown] = useState(false)
+  const [panning, setPanning] = useState(false)
   const [marquee, setMarquee] = useState(null)
   const interaction = useRef(null)
   const lastClick = useRef({ id: null, time: 0 })
+  const viewRef = useRef({ pan, zoom })
+  const pinchActiveRef = useRef(false)
+  const pinchIdleTimer = useRef(0)
+
+  // Sync props → ref only when not mid-pinch (avoids clobbering newer gesture values)
+  useEffect(() => {
+    if (pinchActiveRef.current) return
+    viewRef.current = { pan, zoom }
+  }, [pan, zoom])
 
   const selected = elements.filter((e) => selectedIds.includes(e.id))
   const bounds = selected.length ? getBounds(selected) : null
@@ -65,6 +75,105 @@ export default function Canvas({
     }
   }, [])
 
+  // Trackpad: pinch-zoom (ctrl+wheel only) and two-finger pan.
+  // One update per frame; pan+zoom written together; viewRef updated sync.
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+
+    let raf = 0
+    let pendingZoom = null // { clientX, clientY, factor }
+    let pendingPan = null // { dx, dy }
+
+    const applyView = (nextZoom, clientX, clientY, panDx, panDy) => {
+      const { pan: p, zoom: z } = viewRef.current
+      let zoomOut = z
+      let panOut = p
+
+      if (nextZoom != null) {
+        zoomOut = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom))
+        const rect = el.getBoundingClientRect()
+        const mx = clientX - rect.left
+        const my = clientY - rect.top
+        const scale = zoomOut / Math.max(z, 0.0001)
+        panOut = {
+          x: mx - (mx - p.x) * scale,
+          y: my - (my - p.y) * scale,
+        }
+      }
+
+      if (panDx || panDy) {
+        panOut = { x: panOut.x - (panDx || 0), y: panOut.y - (panDy || 0) }
+      }
+
+      if (zoomOut === z && panOut.x === p.x && panOut.y === p.y) return
+
+      viewRef.current = { pan: panOut, zoom: zoomOut }
+      onViewChange({ pan: panOut, zoom: zoomOut })
+    }
+
+    const flush = () => {
+      raf = 0
+      const zoomEvt = pendingZoom
+      const panEvt = pendingPan
+      pendingZoom = null
+      pendingPan = null
+
+      if (zoomEvt) {
+        applyView(
+          viewRef.current.zoom * zoomEvt.factor,
+          zoomEvt.clientX,
+          zoomEvt.clientY,
+          0,
+          0,
+        )
+        return
+      }
+      if (panEvt) applyView(null, 0, 0, panEvt.dx, panEvt.dy)
+    }
+
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(flush)
+    }
+
+    const onWheel = (e) => {
+      e.preventDefault()
+
+      // Pinch → ctrl/meta + wheel (Safari gesture* removed — it double-fired with this)
+      if (e.ctrlKey || e.metaKey) {
+        pinchActiveRef.current = true
+        window.clearTimeout(pinchIdleTimer.current)
+        pinchIdleTimer.current = window.setTimeout(() => {
+          pinchActiveRef.current = false
+          // adopt committed React state after gesture ends
+          viewRef.current = { pan: viewRef.current.pan, zoom: viewRef.current.zoom }
+        }, 120)
+
+        const intensity = e.deltaMode === 1 ? 0.05 : 0.01
+        const factor = Math.exp(-e.deltaY * intensity)
+        if (!pendingZoom) {
+          pendingZoom = { clientX: e.clientX, clientY: e.clientY, factor: 1 }
+        }
+        pendingZoom.factor *= factor
+        pendingZoom.clientX = e.clientX
+        pendingZoom.clientY = e.clientY
+        pendingPan = null
+        schedule()
+        return
+      }
+
+      if (!pendingPan) pendingPan = { dx: 0, dy: 0 }
+      pendingPan.dx += e.deltaX
+      pendingPan.dy += e.deltaY
+      schedule()
+    }
+
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [onViewChange])
   const getStageRect = () => stageRef.current.getBoundingClientRect()
 
   const hitTest = useCallback(
@@ -78,24 +187,11 @@ export default function Canvas({
     [elements],
   )
 
-  const onWheel = (e) => {
-    e.preventDefault()
-    const rect = getStageRect()
-    const mx = e.clientX - rect.left
-    const my = e.clientY - rect.top
-    const delta = e.deltaY > 0 ? -0.08 : 0.08
-    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * (1 + delta)))
-    const scale = next / zoom
-    onZoomChange(next)
-    onPanChange({
-      x: mx - (mx - pan.x) * scale,
-      y: my - (my - pan.y) * scale,
-    })
-  }
-
   const onStagePointerDown = (e) => {
+    // Middle-mouse, Space+drag, or empty-canvas drag → pan
     if (e.button === 1 || (e.button === 0 && spaceDown)) {
       e.preventDefault()
+      setPanning(true)
       interaction.current = {
         mode: 'pan',
         startX: e.clientX,
@@ -121,6 +217,25 @@ export default function Canvas({
     if (hit) return
 
     const additive = e.metaKey || e.ctrlKey
+    const wantMarquee = e.shiftKey || additive
+
+    if (!wantMarquee) {
+      // Drag empty canvas to pan (laptop / mouse friendly)
+      if (!additive) {
+        onSelect([])
+        onEditGroup(null)
+      }
+      setPanning(true)
+      interaction.current = {
+        mode: 'pan',
+        startX: e.clientX,
+        startY: e.clientY,
+        origPan: { ...pan },
+      }
+      e.currentTarget.setPointerCapture(e.pointerId)
+      return
+    }
+
     if (!additive) {
       onSelect([])
       onEditGroup(null)
@@ -325,23 +440,17 @@ export default function Canvas({
       }
       setMarquee(null)
     }
+    if (ix?.mode === 'pan') setPanning(false)
     interaction.current = null
   }
 
-  const cursor = spaceDown
-    ? 'grab'
-    : placeType
-      ? 'crosshair'
-      : interaction.current?.mode === 'pan'
-        ? 'grabbing'
-        : 'default'
+  const cursor = spaceDown || panning ? (panning ? 'grabbing' : 'grab') : placeType ? 'crosshair' : 'default'
 
   return (
     <div
       ref={stageRef}
       className="canvas-stage"
       style={{ cursor }}
-      onWheel={onWheel}
       onPointerDown={onStagePointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -408,7 +517,7 @@ export default function Canvas({
       <div className="canvas-hint">
         {editingGroupId
           ? 'Editing group atoms · Esc to exit'
-          : 'Space+drag pan · Scroll zoom · Double-click group to edit'}
+          : 'Pinch zoom · Scroll/drag pan · Shift-drag select · Double-click group to edit'}
       </div>
     </div>
   )

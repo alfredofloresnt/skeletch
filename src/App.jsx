@@ -140,6 +140,16 @@ export default function App() {
 
   const onZoomChange = (z) => setZoom(clamp(z, MIN_ZOOM, MAX_ZOOM))
 
+  const onViewChange = useCallback((next) => {
+    if (next.zoom != null && next.pan != null) {
+      setZoom(clamp(next.zoom, MIN_ZOOM, MAX_ZOOM))
+      setPan(next.pan)
+      return
+    }
+    if (next.zoom != null) setZoom(clamp(next.zoom, MIN_ZOOM, MAX_ZOOM))
+    if (next.pan != null) setPan(next.pan)
+  }, [])
+
   const fitArtboard = () => {
     const wrap = stageWrapRef.current
     if (!wrap) return
@@ -311,7 +321,7 @@ export default function App() {
             pan={pan}
             zoom={zoom}
             onPanChange={setPan}
-            onZoomChange={onZoomChange}
+            onViewChange={onViewChange}
             editingGroupId={editingGroupId}
             onEditGroup={setEditingGroupId}
           />
