@@ -197,6 +197,35 @@ function paintShape(ctx, el) {
     return
   }
 
+  if (el.type === 'triangle') {
+    const sw = el.strokeWidth || 0
+    const stroke = el.stroke || '#1a1a1a'
+    const fill = el.fill
+    const x1 = el.x + el.w / 2
+    const y1 = el.y
+    const x2 = el.x
+    const y2 = el.y + el.h
+    const x3 = el.x + el.w
+    const y3 = el.y + el.h
+    ctx.beginPath()
+    ctx.moveTo(x1, y1)
+    ctx.lineTo(x2, y2)
+    ctx.lineTo(x3, y3)
+    ctx.closePath()
+    if (fill && fill !== 'transparent') {
+      ctx.fillStyle = fill
+      ctx.fill()
+    }
+    if (sw > 0) {
+      ctx.strokeStyle = stroke
+      ctx.lineWidth = sw
+      ctx.lineJoin = 'miter'
+      ctx.stroke()
+    }
+    ctx.restore()
+    return
+  }
+
   if (el.type === 'image') {
     paintImage(ctx, el)
     ctx.restore()

@@ -372,15 +372,6 @@ export default function SidePanel({
                       onDragEnd={onDragEnd}
                       onClick={guardClick((e) => {
                         if (renaming) return
-                        if (
-                          selected &&
-                          selectedIds.length >= 2 &&
-                          !e.metaKey &&
-                          !e.ctrlKey
-                        ) {
-                          openActions(e, childIds)
-                          return
-                        }
                         selectGroup(row.groupId, e.metaKey || e.ctrlKey)
                       })}
                       onContextMenu={(e) => {
@@ -472,10 +463,6 @@ export default function SidePanel({
                   onDrop={(e) => onDropRow(e, el.id, 'tree')}
                   onDragEnd={onDragEnd}
                   onClick={guardClick((e) => {
-                    if (selected && selectedIds.length >= 2 && !e.metaKey && !e.ctrlKey) {
-                      openActions(e)
-                      return
-                    }
                     if (e.metaKey || e.ctrlKey) {
                       onSelect(
                         selected

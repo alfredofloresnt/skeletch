@@ -71,6 +71,21 @@ export function pointInElement(px, py, el) {
     const dy = (py - cy) / ry
     return dx * dx + dy * dy <= 1
   }
+  if (el.type === 'triangle') {
+    // Upward triangle: top center, bottom-left, bottom-right
+    const x1 = el.x + el.w / 2
+    const y1 = el.y
+    const x2 = el.x
+    const y2 = el.y + el.h
+    const x3 = el.x + el.w
+    const y3 = el.y + el.h
+    const denom = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
+    if (!denom) return false
+    const a = ((y2 - y3) * (px - x3) + (x3 - x2) * (py - y3)) / denom
+    const b = ((y3 - y1) * (px - x3) + (x1 - x3) * (py - y3)) / denom
+    const c = 1 - a - b
+    return a >= 0 && b >= 0 && c >= 0
+  }
   return px >= box.x && px <= box.x + box.w && py >= box.y && py <= box.y + box.h
 }
 

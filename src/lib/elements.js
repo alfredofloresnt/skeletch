@@ -46,6 +46,22 @@ const COMPOSED_LAYOUTS = {
       name: 'Label',
     }),
   ],
+  search: () => [
+    atom('rect', { x: 0, y: 0, w: 220, h: 40, cornerRadius: 20, name: 'Field' }),
+    atom('circle', { x: 12, y: 10, w: 14, h: 14, name: 'Icon' }),
+    atom('line', { x: 24, y: 24, w: 6, h: 6, name: 'Handle' }),
+    atom('text', {
+      x: 36,
+      y: 0,
+      w: 168,
+      h: 40,
+      text: 'Search…',
+      fontSize: 14,
+      textAlign: 'left',
+      verticalAlign: 'middle',
+      name: 'Label',
+    }),
+  ],
   button: () => [
     atom('rect', { x: 0, y: 0, w: 120, h: 40, cornerRadius: 6, name: 'Bg' }),
     atom('text', {
@@ -74,6 +90,28 @@ const COMPOSED_LAYOUTS = {
       textAlign: 'left',
       verticalAlign: 'middle',
       name: 'Label',
+    }),
+  ],
+  switch: () => [
+    atom('rect', { x: 0, y: 0, w: 44, h: 24, cornerRadius: 12, name: 'Track' }),
+    atom('circle', {
+      x: 22,
+      y: 2,
+      w: 20,
+      h: 20,
+      fill: '#1a1a1a',
+      name: 'Thumb',
+    }),
+  ],
+  slider: () => [
+    atom('line', { x: 0, y: 12, w: 160, h: 0, name: 'Track' }),
+    atom('circle', {
+      x: 104,
+      y: 4,
+      w: 16,
+      h: 16,
+      fill: '#1a1a1a',
+      name: 'Thumb',
     }),
   ],
   dropdown: () => [
@@ -118,6 +156,20 @@ const COMPOSED_LAYOUTS = {
       name: 'Body',
     }),
     atom('rect', { x: 16, y: 228, w: 72, h: 20, cornerRadius: 4, name: 'CTA' }),
+  ],
+  slideshow: () => [
+    atom('rect', { x: 0, y: 0, w: 280, h: 160, cornerRadius: 6, name: 'Frame' }),
+    atom('image', { x: 12, y: 12, w: 256, h: 112, name: 'Slide' }),
+    // Prev chevron <
+    atom('line', { x: 20, y: 70, w: 8, h: -8, name: 'Prev L' }),
+    atom('line', { x: 20, y: 70, w: 8, h: 8, name: 'Prev R' }),
+    // Next chevron >
+    atom('line', { x: 252, y: 62, w: 8, h: 8, name: 'Next L' }),
+    atom('line', { x: 252, y: 78, w: 8, h: -8, name: 'Next R' }),
+    // Dots
+    atom('circle', { x: 118, y: 136, w: 8, h: 8, fill: '#1a1a1a', name: 'Dot 1' }),
+    atom('circle', { x: 136, y: 136, w: 8, h: 8, name: 'Dot 2' }),
+    atom('circle', { x: 154, y: 136, w: 8, h: 8, name: 'Dot 3' }),
   ],
   grid: () => {
     const cells = []

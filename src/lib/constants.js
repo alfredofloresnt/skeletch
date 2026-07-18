@@ -9,6 +9,7 @@ export const FRAME_PRESETS = [
 export const ELEMENT_TYPES = [
   { type: 'rect', label: 'Rectangle' },
   { type: 'circle', label: 'Circle' },
+  { type: 'triangle', label: 'Triangle' },
   { type: 'line', label: 'Line' },
   { type: 'text', label: 'Text' },
   { type: 'image', label: 'Image' },
@@ -16,10 +17,14 @@ export const ELEMENT_TYPES = [
 
 export const COMPOSED_TYPES = [
   { type: 'input', label: 'Input' },
+  { type: 'search', label: 'Search' },
   { type: 'button', label: 'Button' },
   { type: 'checkbox', label: 'Checkbox' },
+  { type: 'switch', label: 'Switch' },
+  { type: 'slider', label: 'Slider' },
   { type: 'dropdown', label: 'Dropdown' },
   { type: 'card', label: 'Card' },
+  { type: 'slideshow', label: 'Slideshow' },
   { type: 'grid', label: 'Grid' },
 ]
 
@@ -41,6 +46,14 @@ export const DEFAULTS = {
     strokeWidth: 2,
     opacity: 1,
     cornerRadius: 0,
+  },
+  triangle: {
+    w: 96,
+    h: 96,
+    fill: 'transparent',
+    stroke: '#1a1a1a',
+    strokeWidth: 2,
+    opacity: 1,
   },
   line: {
     w: 160,

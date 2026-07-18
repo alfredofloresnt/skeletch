@@ -132,6 +132,30 @@ export default function WireElement({ el, selected, onPointerDown, dimmed }) {
     )
   }
 
+  if (el.type === 'triangle') {
+    const sw = el.strokeWidth || 0
+    const fill = el.fill === 'transparent' ? 'none' : el.fill
+    return (
+      <div
+        className={`wire-el wire-el--triangle${selected ? ' is-selected' : ''}`}
+        style={style}
+        data-id={el.id}
+        onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
+      >
+        <svg className="el-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <polygon
+            points="50,3 97,97 3,97"
+            fill={fill}
+            stroke={sw > 0 ? el.stroke : 'none'}
+            strokeWidth={sw}
+            strokeLinejoin="miter"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+      </div>
+    )
+  }
+
   if (el.type === 'image') {
     const fill = el.fill ?? DEFAULTS.image.fill
     return (
