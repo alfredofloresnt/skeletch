@@ -22,6 +22,7 @@ export default function Canvas({
   onMoveElements,
   onResizeElement,
   onResizeGroup,
+  onEditStart,
   onPlace,
   onClearPlace,
   pan,
@@ -348,6 +349,11 @@ export default function Canvas({
   const onPointerMove = (e) => {
     const ix = interaction.current
     if (!ix) return
+    const recordEdit = () => {
+      if (ix.historyRecorded) return
+      onEditStart()
+      ix.historyRecorded = true
+    }
 
     if (ix.mode === 'pan') {
       onPanChange({
@@ -370,6 +376,7 @@ export default function Canvas({
     }
 
     if (ix.mode === 'move') {
+      recordEdit()
       let dx = world.x - ix.startWorld.x
       let dy = world.y - ix.startWorld.y
       if (snapOn) {
@@ -391,6 +398,7 @@ export default function Canvas({
     }
 
     if (ix.mode === 'resize') {
+      recordEdit()
       const dx = world.x - ix.startWorld.x
       const dy = world.y - ix.startWorld.y
       const next = applyResize(ix.origin, ix.handle, dx, dy, {
@@ -402,6 +410,7 @@ export default function Canvas({
     }
 
     if (ix.mode === 'resize-group') {
+      recordEdit()
       const dx = world.x - ix.startWorld.x
       const dy = world.y - ix.startWorld.y
       const proxy = {

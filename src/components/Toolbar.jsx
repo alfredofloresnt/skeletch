@@ -14,6 +14,8 @@ export default function Toolbar({
   onFit,
   onSave,
   onOpen,
+  onUndo,
+  canUndo,
 }) {
   const fileRef = useRef(null)
 
@@ -75,6 +77,19 @@ export default function Toolbar({
           onClick={onToggleSnap}
         >
           Snap {snapOn ? 'on' : 'off'}
+        </button>
+        <button
+          type="button"
+          className="btn-ghost undo-button"
+          onClick={onUndo}
+          disabled={!canUndo}
+          title="Undo (⌘Z)"
+          aria-keyshortcuts="Meta+Z Control+Z"
+        >
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M7.5 5 3 9.5 7.5 14M3.5 9.5h7.25a5.25 5.25 0 0 1 5.25 5.25" />
+          </svg>
+          Undo
         </button>
       </div>
 

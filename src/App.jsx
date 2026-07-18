@@ -29,6 +29,7 @@ import {
 import './App.css'
 
 const DEFAULT_PRESET = FRAME_PRESETS[0]
+const HISTORY_LIMIT = 100
 
 export default function App() {
   const [artboard, setArtboard] = useState({
@@ -49,13 +50,52 @@ export default function App() {
   const stageWrapRef = useRef(null)
   const clipboardRef = useRef([])
   const paletteDragRef = useRef(null)
+  const historyRef = useRef([])
+  const documentRef = useRef(null)
+  const [canUndo, setCanUndo] = useState(false)
+
+  documentRef.current = {
+    artboard,
+    presetId,
+    snapOn,
+    elements,
+    selectedIds,
+    editingGroupId,
+  }
+
+  const recordHistory = useCallback(() => {
+    const current = documentRef.current
+    historyRef.current.push({
+      ...current,
+      artboard: { ...current.artboard },
+      elements: current.elements.map((el) => ({ ...el })),
+      selectedIds: [...current.selectedIds],
+    })
+    if (historyRef.current.length > HISTORY_LIMIT) historyRef.current.shift()
+    setCanUndo(true)
+  }, [])
+
+  const undo = useCallback(() => {
+    const previous = historyRef.current.pop()
+    if (!previous) return
+    setArtboard(previous.artboard)
+    setPresetId(previous.presetId)
+    setSnapOn(previous.snapOn)
+    setElements(previous.elements)
+    setSelectedIds(previous.selectedIds)
+    setEditingGroupId(previous.editingGroupId)
+    setPlaceType(null)
+    setCanUndo(historyRef.current.length > 0)
+  }, [])
 
   const updateElement = useCallback((id, patch) => {
+    recordHistory()
     setElements((prev) => prev.map((el) => (el.id === id ? { ...el, ...patch } : el)))
-  }, [])
+  }, [recordHistory])
 
   const place = useCallback(
     (type, x, y) => {
+      recordHistory()
       setElements((prev) => {
         if (isComposedKind(type)) {
           const created = createComposed(type, x, y, nextZ(prev), snapOn)
@@ -68,7 +108,7 @@ export default function App() {
         return [...prev, el]
       })
     },
-    [snapOn],
+    [recordHistory, snapOn],
   )
 
   const startPaletteDrag = useCallback(
@@ -126,6 +166,7 @@ export default function App() {
   )
 
   const onPreset = (id) => {
+    recordHistory()
     setPresetId(id)
     const preset = FRAME_PRESETS.find((p) => p.id === id)
     if (preset) {
@@ -134,6 +175,7 @@ export default function App() {
   }
 
   const onSizeChange = (patch) => {
+    recordHistory()
     setPresetId('custom')
     setArtboard((prev) => ({ ...prev, ...patch }))
   }
@@ -183,6 +225,12 @@ export default function App() {
       const tag = e.target.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        undo()
+        return
+      }
+
       if (e.key === 'Escape') {
         if (editingGroupId) {
           setEditingGroupId(null)
@@ -195,6 +243,7 @@ export default function App() {
 
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length) {
         e.preventDefault()
+        recordHistory()
         setElements((prev) => prev.filter((el) => !selectedIds.includes(el.id)))
         setSelectedIds([])
         return
@@ -211,6 +260,7 @@ export default function App() {
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v' && clipboardRef.current.length) {
         e.preventDefault()
+        recordHistory()
         const clipIds = clipboardRef.current.map((el) => el.id)
         const { elements: copies, ids } = duplicateElements(clipboardRef.current, clipIds, 16, 16)
         // Rebase z on top of current document
@@ -225,6 +275,7 @@ export default function App() {
 
       if (selectedIds.length && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault()
+        recordHistory()
         const step = e.shiftKey ? 8 : 1
         const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
         const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
@@ -237,9 +288,10 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedIds, editingGroupId, elements])
+  }, [selectedIds, editingGroupId, elements, recordHistory, undo])
 
   const handleUngroup = (groupId) => {
+    recordHistory()
     setElements((prev) => ungroup(prev, groupId))
     setEditingGroupId(null)
   }
@@ -252,6 +304,7 @@ export default function App() {
   const handleOpen = async (file) => {
     try {
       const doc = await readWireframeFile(file)
+      recordHistory()
       setArtboard(doc.artboard)
       setPresetId(doc.presetId)
       setSnapOn(doc.snapOn)
@@ -274,11 +327,16 @@ export default function App() {
         onPreset={onPreset}
         onSizeChange={onSizeChange}
         onZoomChange={onZoomChange}
-        onToggleSnap={() => setSnapOn((s) => !s)}
+        onToggleSnap={() => {
+          recordHistory()
+          setSnapOn((s) => !s)
+        }}
         onExport={() => exportArtboardPng(artboard, elements)}
         onFit={fitArtboard}
         onSave={handleSave}
         onOpen={handleOpen}
+        onUndo={undo}
+        canUndo={canUndo}
       />
 
       <div className="app-body">
@@ -291,7 +349,10 @@ export default function App() {
           elements={elements}
           selectedIds={selectedIds}
           onSelect={setSelectedIds}
-          onReorderTree={(keys) => setElements((prev) => reorderLayerTree(prev, keys))}
+          onReorderTree={(keys) => {
+            recordHistory()
+            setElements((prev) => reorderLayerTree(prev, keys))
+          }}
           dragId={dragLayerId}
           onDragId={setDragLayerId}
           editingGroupId={editingGroupId}
@@ -312,10 +373,13 @@ export default function App() {
                 prev.map((el) => (map[el.id] ? { ...el, x: map[el.id].x, y: map[el.id].y } : el)),
               )
             }}
-            onResizeElement={(id, box) => updateElement(id, box)}
+            onResizeElement={(id, box) => {
+              setElements((prev) => prev.map((el) => (el.id === id ? { ...el, ...box } : el)))
+            }}
             onResizeGroup={(origins, oldBounds, newBounds) => {
               setElements((prev) => scaleElementsToBounds(prev, origins, oldBounds, newBounds))
             }}
+            onEditStart={recordHistory}
             onPlace={place}
             onClearPlace={() => setPlaceType(null)}
             pan={pan}
@@ -340,11 +404,24 @@ export default function App() {
           elements={elements}
           selectedIds={selectedIds}
           onUpdate={updateElement}
-          onBringForward={() => setElements((prev) => bringForward(prev, selectedIds))}
-          onSendBackward={() => setElements((prev) => sendBackward(prev, selectedIds))}
-          onBringToFront={() => setElements((prev) => bringToFront(prev, selectedIds))}
-          onSendToBack={() => setElements((prev) => sendToBack(prev, selectedIds))}
+          onBringForward={() => {
+            recordHistory()
+            setElements((prev) => bringForward(prev, selectedIds))
+          }}
+          onSendBackward={() => {
+            recordHistory()
+            setElements((prev) => sendBackward(prev, selectedIds))
+          }}
+          onBringToFront={() => {
+            recordHistory()
+            setElements((prev) => bringToFront(prev, selectedIds))
+          }}
+          onSendToBack={() => {
+            recordHistory()
+            setElements((prev) => sendToBack(prev, selectedIds))
+          }}
           onDelete={() => {
+            recordHistory()
             setElements((prev) => prev.filter((el) => !selectedIds.includes(el.id)))
             setSelectedIds([])
           }}
