@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { GRID_SIZE, MAX_ZOOM, MIN_ZOOM } from '../lib/constants'
 import { canGroup, expandSelectionForGroups, sharedGroupId } from '../lib/elements'
 import {
@@ -10,8 +10,85 @@ import {
   snap,
   sortByZ,
 } from '../lib/geometry'
+import type {
+  Artboard,
+  PlaceType,
+  Point,
+  Rect,
+  ResizeHandle,
+  WireElement as WireElementModel,
+} from '../lib/types'
 import ActionMenu from './ActionMenu'
 import WireElement, { SelectionOverlay } from './WireElement'
+
+type Interaction =
+  | {
+      mode: 'pan'
+      startX: number
+      startY: number
+      origPan: Point
+      historyRecorded?: boolean
+    }
+  | {
+      mode: 'marquee'
+      startX: number
+      startY: number
+      additive: boolean
+      pointerId: number
+      historyRecorded?: boolean
+    }
+  | {
+      mode: 'move'
+      startWorld: Point
+      origins: Record<string, Point>
+      ids: string[]
+      historyRecorded?: boolean
+    }
+  | {
+      mode: 'resize'
+      handle: ResizeHandle
+      startWorld: Point
+      origin: WireElementModel
+      id: string
+      keepAspect: boolean
+      historyRecorded?: boolean
+    }
+  | {
+      mode: 'resize-group'
+      handle: ResizeHandle
+      startWorld: Point
+      originBounds: Rect
+      origins: WireElementModel[]
+      keepAspect: boolean
+      historyRecorded?: boolean
+    }
+
+type CanvasProps = {
+  artboard: Artboard
+  elements: WireElementModel[]
+  selectedIds: string[]
+  snapOn: boolean
+  placeType: PlaceType | null
+  onSelect: (ids: string[]) => void
+  onMoveElements: (updates: { id: string; x: number; y: number }[]) => void
+  onResizeElement: (id: string, box: Rect) => void
+  onResizeGroup: (
+    origins: WireElementModel[],
+    oldBounds: Rect,
+    newBounds: Rect,
+  ) => void
+  onEditStart: () => void
+  onPlace: (type: PlaceType, x: number, y: number) => void
+  onClearPlace: () => void
+  pan: Point
+  zoom: number
+  onPanChange: (pan: Point) => void
+  onViewChange: (next: { pan?: Point; zoom?: number }) => void
+  editingGroupId: string | null
+  onEditGroup: (groupId: string | null) => void
+  onGroup?: (ids?: string[]) => void
+  onUngroup?: (groupId: string) => void
+}
 
 export default function Canvas({
   artboard,
@@ -34,14 +111,14 @@ export default function Canvas({
   onEditGroup,
   onGroup,
   onUngroup,
-}) {
-  const stageRef = useRef(null)
+}: CanvasProps) {
+  const stageRef = useRef<HTMLDivElement>(null)
   const [spaceDown, setSpaceDown] = useState(false)
   const [panning, setPanning] = useState(false)
-  const [marquee, setMarquee] = useState(null)
-  const [menu, setMenu] = useState(null)
-  const interaction = useRef(null)
-  const lastClick = useRef({ id: null, time: 0 })
+  const [marquee, setMarquee] = useState<Rect | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
+  const interaction = useRef<Interaction | null>(null)
+  const lastClick = useRef<{ id: string | null; time: number }>({ id: null, time: 0 })
   const viewRef = useRef({ pan, zoom })
   const pinchActiveRef = useRef(false)
   const pinchIdleTimer = useRef(0)
@@ -58,18 +135,19 @@ export default function Canvas({
   const showGroupResize = Boolean(groupSelected) || selected.length === 1
 
   useEffect(() => {
-    const down = (e) => {
+    const down = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName
       if (
         e.code === 'Space' &&
         !e.repeat &&
-        e.target.tagName !== 'INPUT' &&
-        e.target.tagName !== 'TEXTAREA'
+        tag !== 'INPUT' &&
+        tag !== 'TEXTAREA'
       ) {
         e.preventDefault()
         setSpaceDown(true)
       }
     }
-    const up = (e) => {
+    const up = (e: KeyboardEvent) => {
       if (e.code === 'Space') setSpaceDown(false)
     }
     window.addEventListener('keydown', down)
@@ -87,10 +165,16 @@ export default function Canvas({
     if (!el) return
 
     let raf = 0
-    let pendingZoom = null // { clientX, clientY, factor }
-    let pendingPan = null // { dx, dy }
+    let pendingZoom: { clientX: number; clientY: number; factor: number } | null = null
+    let pendingPan: { dx: number; dy: number } | null = null
 
-    const applyView = (nextZoom, clientX, clientY, panDx, panDy) => {
+    const applyView = (
+      nextZoom: number | null,
+      clientX: number,
+      clientY: number,
+      panDx: number,
+      panDy: number,
+    ) => {
       const { pan: p, zoom: z } = viewRef.current
       let zoomOut = z
       let panOut = p
@@ -141,7 +225,7 @@ export default function Canvas({
       if (!raf) raf = requestAnimationFrame(flush)
     }
 
-    const onWheel = (e) => {
+    const onWheel = (e: WheelEvent) => {
       e.preventDefault()
 
       // Pinch → ctrl/meta + wheel (Safari gesture* removed — it double-fired with this)
@@ -179,10 +263,10 @@ export default function Canvas({
       if (raf) cancelAnimationFrame(raf)
     }
   }, [onViewChange])
-  const getStageRect = () => stageRef.current.getBoundingClientRect()
+  const getStageRect = () => stageRef.current!.getBoundingClientRect()
 
   const hitTest = useCallback(
-    (wx, wy) => {
+    (wx: number, wy: number) => {
       const sorted = sortByZ(elements).reverse()
       for (const el of sorted) {
         if (pointInElement(wx, wy, el)) return el
@@ -192,7 +276,7 @@ export default function Canvas({
     [elements],
   )
 
-  const onStagePointerDown = (e) => {
+  const onStagePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     // Middle-mouse, Space+drag, or empty-canvas drag → pan
     if (e.button === 1 || (e.button === 0 && spaceDown)) {
       e.preventDefault()
@@ -257,7 +341,7 @@ export default function Canvas({
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
-  const onElementPointerDown = (e, id) => {
+  const onElementPointerDown = (e: ReactPointerEvent, id: string) => {
     if (spaceDown || e.button === 1) return
     e.stopPropagation()
     e.preventDefault()
@@ -265,18 +349,18 @@ export default function Canvas({
     const el = elements.find((x) => x.id === id)
     const now = Date.now()
     const isDouble =
-      lastClick.current.id === id && now - lastClick.current.time < 350 && el?.groupId
+      lastClick.current.id === id && now - lastClick.current.time < 350 && Boolean(el?.groupId)
     lastClick.current = { id, time: now }
 
     const additive = e.metaKey || e.ctrlKey
 
-    if (isDouble && el.groupId) {
+    if (isDouble && el?.groupId) {
       onEditGroup(el.groupId)
       onSelect([id])
       return
     }
 
-    if (!additive && editingGroupId && el.groupId !== editingGroupId) {
+    if (!additive && editingGroupId && el?.groupId !== editingGroupId) {
       onEditGroup(null)
     }
 
@@ -317,10 +401,10 @@ export default function Canvas({
       origins,
       ids: movingIds,
     }
-    stageRef.current.setPointerCapture(e.pointerId)
+    stageRef.current?.setPointerCapture(e.pointerId)
   }
 
-  const onHandleDown = (e, handle) => {
+  const onHandleDown = (e: ReactPointerEvent, handle: ResizeHandle) => {
     e.stopPropagation()
     e.preventDefault()
     if (!showGroupResize || !bounds) return
@@ -347,10 +431,10 @@ export default function Canvas({
         keepAspect: e.shiftKey,
       }
     }
-    stageRef.current.setPointerCapture(e.pointerId)
+    stageRef.current?.setPointerCapture(e.pointerId)
   }
 
-  const onPointerMove = (e) => {
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const ix = interaction.current
     if (!ix) return
     const recordEdit = () => {
@@ -418,7 +502,7 @@ export default function Canvas({
       const dx = world.x - ix.startWorld.x
       const dy = world.y - ix.startWorld.y
       const proxy = {
-        type: 'rect',
+        type: 'rect' as const,
         x: ix.originBounds.x,
         y: ix.originBounds.y,
         w: ix.originBounds.w,
@@ -459,7 +543,7 @@ export default function Canvas({
 
   const cursor = spaceDown || panning ? (panning ? 'grabbing' : 'grab') : placeType ? 'crosshair' : 'default'
 
-  const openActions = (e, ids = selectedIds) => {
+  const openActions = (e: { preventDefault: () => void; clientX: number; clientY: number }, ids = selectedIds) => {
     e.preventDefault()
     if (!ids.length) return
     setMenu({ x: e.clientX, y: e.clientY, ids })
@@ -526,8 +610,7 @@ export default function Canvas({
           }}
         >
           {sortByZ(elements).map((el) => {
-            const dimmed =
-              editingGroupId && el.groupId !== editingGroupId
+            const dimmed = Boolean(editingGroupId && el.groupId !== editingGroupId)
             return (
               <WireElement
                 key={el.id}

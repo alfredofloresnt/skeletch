@@ -1,5 +1,23 @@
 import { useRef } from 'react'
 import { FRAME_PRESETS } from '../lib/constants'
+import type { Artboard } from '../lib/types'
+
+type ToolbarProps = {
+  artboard: Artboard
+  presetId: string
+  zoom: number
+  snapOn: boolean
+  onPreset: (id: string) => void
+  onSizeChange: (patch: Partial<Artboard>) => void
+  onZoomChange: (zoom: number) => void
+  onToggleSnap: () => void
+  onExport: () => void
+  onFit: () => void
+  onSave: () => void
+  onOpen: (file: File) => void
+  onUndo: () => void
+  canUndo: boolean
+}
 
 export default function Toolbar({
   artboard,
@@ -16,8 +34,8 @@ export default function Toolbar({
   onOpen,
   onUndo,
   canUndo,
-}) {
-  const fileRef = useRef(null)
+}: ToolbarProps) {
+  const fileRef = useRef<HTMLInputElement>(null)
 
   return (
     <header className="toolbar">

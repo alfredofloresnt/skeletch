@@ -1,3 +1,5 @@
+import type { Artboard, TextAlign, VerticalAlign, WireElement, WireframeDocument } from './types'
+
 export const WIREFRAME_VERSION = 1
 export const WIREFRAME_MIME = 'application/x-wireframe+json'
 
@@ -13,7 +15,17 @@ export const WIREFRAME_MIME = 'application/x-wireframe+json'
  * }
  */
 
-export function serializeWireframe({ artboard, presetId, snapOn, elements }) {
+export function serializeWireframe({
+  artboard,
+  presetId,
+  snapOn,
+  elements,
+}: {
+  artboard: Artboard
+  presetId: string
+  snapOn: boolean
+  elements: WireElement[]
+}): WireframeDocument {
   return {
     format: 'wireframe',
     version: WIREFRAME_VERSION,
@@ -28,7 +40,7 @@ export function serializeWireframe({ artboard, presetId, snapOn, elements }) {
   }
 }
 
-function sanitizeElement(el) {
+function sanitizeElement(el: WireElement): WireElement {
   return {
     id: el.id,
     type: el.type,
@@ -45,16 +57,16 @@ function sanitizeElement(el) {
     cornerRadius: el.cornerRadius ?? 0,
     text: el.text,
     fontSize: el.fontSize,
-    textAlign: el.textAlign || 'left',
-    verticalAlign: el.verticalAlign || 'top',
+    textAlign: (el.textAlign || 'left') as TextAlign,
+    verticalAlign: (el.verticalAlign || 'top') as VerticalAlign,
     groupId: el.groupId ?? null,
     groupName: el.groupName,
     groupKind: el.groupKind,
   }
 }
 
-export function parseWireframe(raw) {
-  const data = typeof raw === 'string' ? JSON.parse(raw) : raw
+export function parseWireframe(raw: string | unknown): Omit<WireframeDocument, 'format' | 'version' | 'savedAt'> {
+  const data = (typeof raw === 'string' ? JSON.parse(raw) : raw) as Partial<WireframeDocument>
 
   if (!data || data.format !== 'wireframe') {
     throw new Error('Not a valid .wireframe file')
@@ -80,7 +92,7 @@ export function parseWireframe(raw) {
   }
 }
 
-export function downloadWireframe(doc, filename) {
+export function downloadWireframe(doc: WireframeDocument, filename?: string): void {
   const json = JSON.stringify(doc, null, 2)
   const blob = new Blob([json], { type: WIREFRAME_MIME })
   const url = URL.createObjectURL(blob)
@@ -91,13 +103,13 @@ export function downloadWireframe(doc, filename) {
   URL.revokeObjectURL(url)
 }
 
-function defaultFilename(doc) {
+function defaultFilename(doc: WireframeDocument): string {
   const { width, height } = doc.artboard
   const stamp = new Date().toISOString().slice(0, 10)
   return `wireframe-${width}x${height}-${stamp}.wireframe`
 }
 
-export function readWireframeFile(file) {
+export function readWireframeFile(file: File): Promise<ReturnType<typeof parseWireframe>> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => {

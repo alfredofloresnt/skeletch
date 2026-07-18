@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { COMPOSED_TYPES, ELEMENT_TYPES } from '../lib/constants'
 import {
   buildLayerTree,
@@ -7,13 +7,14 @@ import {
   sharedGroupId,
 } from '../lib/elements'
 import { getBounds } from '../lib/geometry'
+import type { PlaceType, WireElement as WireElementModel } from '../lib/types'
 import ActionMenu from './ActionMenu'
 import WireElement from './WireElement'
 
 const PREVIEW_W = 72
 const PREVIEW_H = 52
 
-function PalettePreview({ type }) {
+function PalettePreview({ type }: { type: PlaceType }) {
   const els = useMemo(() => getPalettePreview(type), [type])
   const bounds = useMemo(() => getBounds(els), [els])
 
@@ -39,21 +40,33 @@ function PalettePreview({ type }) {
   )
 }
 
-function PaletteButton({ item, placeType, onPlaceType, onPaletteDragStart }) {
-  const startRef = useRef(null)
+type PaletteDragStart = { x: number; y: number; type: PlaceType; dragged?: boolean }
+
+function PaletteButton({
+  item,
+  placeType,
+  onPlaceType,
+  onPaletteDragStart,
+}: {
+  item: { type: PlaceType; label: string }
+  placeType: PlaceType | null
+  onPlaceType: (type: PlaceType | null) => void
+  onPaletteDragStart: (type: PlaceType, x: number, y: number) => void
+}) {
+  const startRef = useRef<PaletteDragStart | null>(null)
 
   return (
     <button
       type="button"
       className={`palette-item${placeType === item.type ? ' is-active' : ''}`}
-      onPointerDown={(e) => {
+      onPointerDown={(e: ReactPointerEvent<HTMLButtonElement>) => {
         if (e.button !== 0) return
         e.preventDefault()
         window.getSelection()?.removeAllRanges()
         startRef.current = { x: e.clientX, y: e.clientY, type: item.type }
         e.currentTarget.setPointerCapture(e.pointerId)
       }}
-      onPointerMove={(e) => {
+      onPointerMove={(e: ReactPointerEvent<HTMLButtonElement>) => {
         const start = startRef.current
         if (!start || start.dragged) return
         const dx = e.clientX - start.x
@@ -84,6 +97,31 @@ function PaletteButton({ item, placeType, onPlaceType, onPaletteDragStart }) {
   )
 }
 
+type SideTab = 'elements' | 'layers'
+type DropHint = { key: string; edge: 'before' | 'after'; scope: string }
+type ContextMenu = { x: number; y: number; ids: string[] }
+
+type SidePanelProps = {
+  tab: SideTab
+  onTab: (tab: SideTab) => void
+  placeType: PlaceType | null
+  onPlaceType: (type: PlaceType | null) => void
+  onPaletteDragStart: (type: PlaceType, x: number, y: number) => void
+  elements: WireElementModel[]
+  selectedIds: string[]
+  onSelect: (ids: string[]) => void
+  onReorderTree: (keys: string[]) => void
+  onReorderGroupChildren?: (groupId: string, childIds: string[]) => void
+  dragId: string | null
+  onDragId: (id: string | null) => void
+  editingGroupId: string | null
+  onEditGroup: (groupId: string | null) => void
+  onGroup?: (ids?: string[]) => void
+  onUngroup?: (groupId: string) => void
+  onRenameGroup?: (groupId: string, name: string) => void
+  canGroupSelection?: boolean
+}
+
 export default function SidePanel({
   tab,
   onTab,
@@ -103,12 +141,12 @@ export default function SidePanel({
   onUngroup,
   onRenameGroup,
   canGroupSelection,
-}) {
+}: SidePanelProps) {
   const tree = buildLayerTree(elements)
-  const [menu, setMenu] = useState(null)
-  const [renamingGroupId, setRenamingGroupId] = useState(null)
-  const [dropHint, setDropHint] = useState(null) // { key, edge: 'before' | 'after', scope: 'tree' | groupId }
-  const dragScopeRef = useRef('tree')
+  const [menu, setMenu] = useState<ContextMenu | null>(null)
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
+  const [dropHint, setDropHint] = useState<DropHint | null>(null)
+  const dragScopeRef = useRef<string>('tree')
   const didDragRef = useRef(false)
 
   const selectedGroupId = sharedGroupId(elements, selectedIds)
@@ -117,7 +155,12 @@ export default function SidePanel({
     row.kind === 'group' ? `group:${row.groupId}` : row.el.id,
   )
 
-  const moveKey = (keys, fromKey, overKey, edge) => {
+  const moveKey = (
+    keys: string[],
+    fromKey: string,
+    overKey: string,
+    edge: 'before' | 'after',
+  ): string[] | null => {
     if (!fromKey || !overKey || fromKey === overKey) return null
     const next = [...keys]
     const from = next.indexOf(fromKey)
@@ -130,12 +173,12 @@ export default function SidePanel({
     return next
   }
 
-  const edgeFromEvent = (e) => {
+  const edgeFromEvent = (e: { currentTarget: HTMLElement; clientY: number }): 'before' | 'after' => {
     const rect = e.currentTarget.getBoundingClientRect()
     return e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
   }
 
-  const onDragStart = (e, key, scope = 'tree') => {
+  const onDragStart = (e: DragEvent, key: string, scope = 'tree') => {
     didDragRef.current = true
     dragScopeRef.current = scope
     onDragId(key)
@@ -152,7 +195,7 @@ export default function SidePanel({
     }, 0)
   }
 
-  const onDragOverRow = (e, key, scope = 'tree') => {
+  const onDragOverRow = (e: DragEvent<HTMLElement>, key: string, scope = 'tree') => {
     e.preventDefault()
     e.stopPropagation()
     if (dragScopeRef.current !== scope) {
@@ -173,7 +216,7 @@ export default function SidePanel({
     )
   }
 
-  const onDropRow = (e, overKey, scope = 'tree') => {
+  const onDropRow = (e: DragEvent<HTMLElement>, overKey: string, scope = 'tree') => {
     e.preventDefault()
     e.stopPropagation()
     const fromKey = dragId || e.dataTransfer.getData('text/plain')
@@ -191,19 +234,19 @@ export default function SidePanel({
     }
 
     const groupRow = tree.find((r) => r.kind === 'group' && r.groupId === scope)
-    if (!groupRow) return
+    if (!groupRow || groupRow.kind !== 'group') return
     const childIds = groupRow.children.map((c) => c.id)
     if (!childIds.includes(fromKey) || !childIds.includes(overKey)) return
     const next = moveKey(childIds, fromKey, overKey, edge)
     if (next) onReorderGroupChildren?.(scope, next)
   }
 
-  const dropClass = (key, scope = 'tree') => {
+  const dropClass = (key: string, scope = 'tree') => {
     if (!dropHint || dropHint.key !== key || dropHint.scope !== scope) return ''
     return dropHint.edge === 'before' ? ' drop-before' : ' drop-after'
   }
 
-  const DropLine = ({ rowKey, scope = 'tree' }) => {
+  const DropLine = ({ rowKey, scope = 'tree' }: { rowKey: string; scope?: string }) => {
     if (!dropHint || dropHint.key !== rowKey || dropHint.scope !== scope) return null
     return (
       <div
@@ -213,16 +256,17 @@ export default function SidePanel({
     )
   }
 
-  const guardClick = (handler) => (e) => {
-    if (didDragRef.current) {
-      e.preventDefault()
-      e.stopPropagation()
-      return
+  const guardClick =
+    (handler: (e: MouseEvent) => void) => (e: MouseEvent) => {
+      if (didDragRef.current) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      handler(e)
     }
-    handler(e)
-  }
 
-  const selectGroup = (groupId, additive) => {
+  const selectGroup = (groupId: string, additive: boolean) => {
     const ids = elements.filter((el) => el.groupId === groupId).map((el) => el.id)
     if (additive) {
       onSelect([...new Set([...selectedIds, ...ids])])
@@ -232,7 +276,7 @@ export default function SidePanel({
     }
   }
 
-  const openActions = (e, ensureIds) => {
+  const openActions = (e: MouseEvent, ensureIds?: string[]) => {
     e.preventDefault()
     e.stopPropagation()
     let ids = selectedIds

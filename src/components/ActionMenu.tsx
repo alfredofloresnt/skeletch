@@ -1,14 +1,22 @@
 import { useEffect, useRef } from 'react'
+import type { ActionMenuItem } from '../lib/types'
 
-export default function ActionMenu({ x, y, items, onClose }) {
-  const ref = useRef(null)
+type ActionMenuProps = {
+  x: number
+  y: number
+  items: ActionMenuItem[]
+  onClose: () => void
+}
+
+export default function ActionMenu({ x, y, items, onClose }: ActionMenuProps) {
+  const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
-    const onPointer = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) onClose()
+    const onPointer = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
     }
     window.addEventListener('keydown', onKey)
     window.addEventListener('pointerdown', onPointer)

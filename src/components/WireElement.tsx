@@ -1,6 +1,14 @@
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { DEFAULTS } from '../lib/constants'
+import type { Rect, ResizeHandle, WireElement as WireElementModel } from '../lib/types'
 
-function ImagePlaceholder({ stroke, strokeWidth }) {
+function ImagePlaceholder({
+  stroke,
+  strokeWidth,
+}: {
+  stroke?: string
+  strokeWidth?: number
+}) {
   const s = stroke ?? DEFAULTS.image.stroke
   const sw = strokeWidth ?? DEFAULTS.image.strokeWidth
   return (
@@ -37,8 +45,15 @@ function ImagePlaceholder({ stroke, strokeWidth }) {
   )
 }
 
-export default function WireElement({ el, selected, onPointerDown, dimmed }) {
-  const style = {
+type WireElementProps = {
+  el: WireElementModel
+  selected?: boolean
+  onPointerDown?: (e: ReactPointerEvent, id: string) => void
+  dimmed?: boolean
+}
+
+export default function WireElement({ el, selected, onPointerDown, dimmed }: WireElementProps) {
+  const style: CSSProperties = {
     left: el.x,
     top: el.y,
     width: Math.max(el.w, 1),
@@ -193,9 +208,15 @@ export default function WireElement({ el, selected, onPointerDown, dimmed }) {
   )
 }
 
-const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
+const HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 
-export function SelectionOverlay({ bounds, zoom, onHandleDown }) {
+type SelectionOverlayProps = {
+  bounds: Rect
+  zoom: number
+  onHandleDown: (e: ReactPointerEvent, handle: ResizeHandle) => void
+}
+
+export function SelectionOverlay({ bounds, zoom, onHandleDown }: SelectionOverlayProps) {
   if (!bounds) return null
   return (
     <div

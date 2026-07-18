@@ -1,25 +1,26 @@
 import { GRID_SIZE, MIN_SIZE } from './constants'
+import type { Point, Rect, ResizeHandle, WireElement } from './types'
 
-export function snap(value, enabled, grid = GRID_SIZE) {
+export function snap(value: number, enabled: boolean, grid = GRID_SIZE): number {
   if (!enabled) return value
   return Math.round(value / grid) * grid
 }
 
-export function clamp(value, min, max) {
+export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
-export function uid(prefix = 'el') {
+export function uid(prefix = 'el'): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 9)}`
 }
 
-export function normalizeRect(x, y, w, h) {
+export function normalizeRect(x: number, y: number, w: number, h: number): Rect {
   const nx = w < 0 ? x + w : x
   const ny = h < 0 ? y + h : y
   return { x: nx, y: ny, w: Math.abs(w), h: Math.abs(h) }
 }
 
-export function rectsIntersect(a, b) {
+export function rectsIntersect(a: Rect, b: Rect): boolean {
   return !(
     a.x + a.w < b.x ||
     b.x + b.w < a.x ||
@@ -28,7 +29,12 @@ export function rectsIntersect(a, b) {
   )
 }
 
-export function getBounds(elements) {
+type BoxLike = Pick<WireElement, 'type' | 'x' | 'y' | 'w' | 'h'> & {
+  strokeWidth?: number
+  z?: number
+}
+
+export function getBounds(elements: BoxLike[]): Rect | null {
   if (!elements.length) return null
   let minX = Infinity
   let minY = Infinity
@@ -45,7 +51,7 @@ export function getBounds(elements) {
 }
 
 /** Bounding box used for hit-testing / selection (lines use stroke padding). */
-export function lineAwareBox(el) {
+export function lineAwareBox(el: BoxLike): Rect {
   if (el.type !== 'line') {
     return { x: el.x, y: el.y, w: el.w, h: el.h }
   }
@@ -59,7 +65,7 @@ export function lineAwareBox(el) {
   }
 }
 
-export function pointInElement(px, py, el) {
+export function pointInElement(px: number, py: number, el: BoxLike): boolean {
   const box = lineAwareBox(el)
   if (el.type === 'circle') {
     const cx = el.x + el.w / 2
@@ -89,11 +95,19 @@ export function pointInElement(px, py, el) {
   return px >= box.x && px <= box.x + box.w && py >= box.y && py <= box.y + box.h
 }
 
-export function applyResize(el, handle, dx, dy, { snapOn, keepAspect }) {
+type ResizeTarget = Pick<WireElement, 'type' | 'x' | 'y' | 'w' | 'h'>
+
+export function applyResize(
+  el: ResizeTarget,
+  handle: ResizeHandle,
+  dx: number,
+  dy: number,
+  { snapOn, keepAspect }: { snapOn: boolean; keepAspect: boolean },
+): Rect {
   let { x, y, w, h } = el
   const aspect = el.w / Math.max(el.h, 1)
 
-  const apply = (nx, ny, nw, nh) => {
+  const apply = (nx: number, ny: number, nw: number, nh: number): Rect => {
     if (keepAspect && el.type !== 'line') {
       if (handle.includes('e') || handle.includes('w')) {
         nh = nw / aspect
@@ -135,13 +149,19 @@ export function applyResize(el, handle, dx, dy, { snapOn, keepAspect }) {
   }
 }
 
-export function screenToWorld(clientX, clientY, stageRect, pan, zoom) {
+export function screenToWorld(
+  clientX: number,
+  clientY: number,
+  stageRect: DOMRect,
+  pan: Point,
+  zoom: number,
+): Point {
   return {
     x: (clientX - stageRect.left - pan.x) / zoom,
     y: (clientY - stageRect.top - pan.y) / zoom,
   }
 }
 
-export function sortByZ(elements) {
+export function sortByZ<T extends { z: number }>(elements: T[]): T[] {
   return [...elements].sort((a, b) => a.z - b.z)
 }

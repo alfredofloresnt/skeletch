@@ -26,6 +26,7 @@ import {
 import { exportArtboardPng } from './lib/exportPng'
 import { FRAME_PRESETS, MAX_ZOOM, MIN_ZOOM } from './lib/constants'
 import { clamp } from './lib/geometry'
+import type { Artboard, PlaceType, Point, WireElement } from './lib/types'
 import {
   downloadWireframe,
   readWireframeFile,
@@ -36,27 +37,38 @@ import './App.css'
 const DEFAULT_PRESET = FRAME_PRESETS[0]
 const HISTORY_LIMIT = 100
 
+type HistorySnapshot = {
+  artboard: Artboard
+  presetId: string
+  snapOn: boolean
+  elements: WireElement[]
+  selectedIds: string[]
+  editingGroupId: string | null
+}
+
+type PaletteDrag = { type: PlaceType; x: number; y: number }
+
 export default function App() {
-  const [artboard, setArtboard] = useState({
+  const [artboard, setArtboard] = useState<Artboard>({
     width: DEFAULT_PRESET.width,
     height: DEFAULT_PRESET.height,
   })
-  const [presetId, setPresetId] = useState(DEFAULT_PRESET.id)
-  const [elements, setElements] = useState([])
-  const [selectedIds, setSelectedIds] = useState([])
+  const [presetId, setPresetId] = useState<string>(DEFAULT_PRESET.id)
+  const [elements, setElements] = useState<WireElement[]>([])
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [snapOn, setSnapOn] = useState(true)
-  const [placeType, setPlaceType] = useState(null)
-  const [sideTab, setSideTab] = useState('elements')
-  const [dragLayerId, setDragLayerId] = useState(null)
-  const [editingGroupId, setEditingGroupId] = useState(null)
-  const [pan, setPan] = useState({ x: 80, y: 60 })
+  const [placeType, setPlaceType] = useState<PlaceType | null>(null)
+  const [sideTab, setSideTab] = useState<'elements' | 'layers'>('elements')
+  const [dragLayerId, setDragLayerId] = useState<string | null>(null)
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
+  const [pan, setPan] = useState<Point>({ x: 80, y: 60 })
   const [zoom, setZoom] = useState(0.7)
-  const [paletteDrag, setPaletteDrag] = useState(null) // { type, x, y }
-  const stageWrapRef = useRef(null)
-  const clipboardRef = useRef([])
-  const paletteDragRef = useRef(null)
-  const historyRef = useRef([])
-  const documentRef = useRef(null)
+  const [paletteDrag, setPaletteDrag] = useState<PaletteDrag | null>(null)
+  const stageWrapRef = useRef<HTMLDivElement>(null)
+  const clipboardRef = useRef<WireElement[]>([])
+  const paletteDragRef = useRef<PaletteDrag | null>(null)
+  const historyRef = useRef<HistorySnapshot[]>([])
+  const documentRef = useRef<HistorySnapshot | null>(null)
   const [canUndo, setCanUndo] = useState(false)
 
   documentRef.current = {
@@ -70,6 +82,7 @@ export default function App() {
 
   const recordHistory = useCallback(() => {
     const current = documentRef.current
+    if (!current) return
     historyRef.current.push({
       ...current,
       artboard: { ...current.artboard },
@@ -93,13 +106,13 @@ export default function App() {
     setCanUndo(historyRef.current.length > 0)
   }, [])
 
-  const updateElement = useCallback((id, patch) => {
+  const updateElement = useCallback((id: string, patch: Partial<WireElement>) => {
     recordHistory()
     setElements((prev) => prev.map((el) => (el.id === id ? { ...el, ...patch } : el)))
   }, [recordHistory])
 
   const place = useCallback(
-    (type, x, y) => {
+    (type: PlaceType, x: number, y: number) => {
       recordHistory()
       setElements((prev) => {
         if (isComposedKind(type)) {
@@ -117,13 +130,13 @@ export default function App() {
   )
 
   const startPaletteDrag = useCallback(
-    (type, clientX, clientY) => {
+    (type: PlaceType, clientX: number, clientY: number) => {
       window.getSelection()?.removeAllRanges()
       const state = { type, x: clientX, y: clientY }
       paletteDragRef.current = state
       setPaletteDrag({ ...state })
 
-      const onMove = (e) => {
+      const onMove = (e: PointerEvent) => {
         if (!paletteDragRef.current) return
         paletteDragRef.current = {
           ...paletteDragRef.current,
@@ -133,7 +146,7 @@ export default function App() {
         setPaletteDrag({ ...paletteDragRef.current })
       }
 
-      const onUp = (e) => {
+      const onUp = (e: PointerEvent) => {
         window.removeEventListener('pointermove', onMove)
         window.removeEventListener('pointerup', onUp)
         window.removeEventListener('pointercancel', onUp)
@@ -170,7 +183,7 @@ export default function App() {
     [pan.x, pan.y, zoom, place],
   )
 
-  const onPreset = (id) => {
+  const onPreset = (id: string) => {
     recordHistory()
     setPresetId(id)
     const preset = FRAME_PRESETS.find((p) => p.id === id)
@@ -179,15 +192,15 @@ export default function App() {
     }
   }
 
-  const onSizeChange = (patch) => {
+  const onSizeChange = (patch: Partial<Artboard>) => {
     recordHistory()
     setPresetId('custom')
     setArtboard((prev) => ({ ...prev, ...patch }))
   }
 
-  const onZoomChange = (z) => setZoom(clamp(z, MIN_ZOOM, MAX_ZOOM))
+  const onZoomChange = (z: number) => setZoom(clamp(z, MIN_ZOOM, MAX_ZOOM))
 
-  const onViewChange = useCallback((next) => {
+  const onViewChange = useCallback((next: { pan?: Point; zoom?: number }) => {
     if (next.zoom != null && next.pan != null) {
       setZoom(clamp(next.zoom, MIN_ZOOM, MAX_ZOOM))
       setPan(next.pan)
@@ -226,8 +239,8 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const onKey = (e) => {
-      const tag = e.target.tagName
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
@@ -312,13 +325,13 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [selectedIds, editingGroupId, elements, recordHistory, undo])
 
-  const handleUngroup = (groupId) => {
+  const handleUngroup = (groupId: string) => {
     recordHistory()
     setElements((prev) => ungroup(prev, groupId))
     setEditingGroupId(null)
   }
 
-  const handleGroup = (ids = selectedIds) => {
+  const handleGroup = (ids: string[] = selectedIds) => {
     if (!canGroup(elements, ids)) return
     recordHistory()
     const next = groupElements(elements, ids)
@@ -327,7 +340,7 @@ export default function App() {
     setEditingGroupId(null)
   }
 
-  const handleRenameGroup = (groupId, name) => {
+  const handleRenameGroup = (groupId: string, name: string) => {
     recordHistory()
     setElements((prev) => renameGroup(prev, groupId, name))
   }
@@ -337,7 +350,7 @@ export default function App() {
     downloadWireframe(doc)
   }
 
-  const handleOpen = async (file) => {
+  const handleOpen = async (file: File) => {
     try {
       const doc = await readWireframeFile(file)
       recordHistory()
@@ -349,7 +362,8 @@ export default function App() {
       setEditingGroupId(null)
       setPlaceType(null)
     } catch (err) {
-      window.alert(err.message || 'Could not open .wireframe file')
+      const message = err instanceof Error ? err.message : 'Could not open .wireframe file'
+      window.alert(message)
     }
   }
 

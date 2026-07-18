@@ -1,6 +1,14 @@
 import { DEFAULTS } from './constants'
+import type { Artboard, WireElement } from './types'
 
-function roundRect(ctx, x, y, w, h, r) {
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
   const radius = Math.min(r || 0, w / 2, h / 2)
   ctx.beginPath()
   if (radius <= 0) {
@@ -16,8 +24,8 @@ function roundRect(ctx, x, y, w, h, r) {
 }
 
 /** Match CSS word-break: break-word — wrap on spaces, then mid-word if needed. */
-function wrapLines(ctx, text, maxWidth) {
-  const lines = []
+function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const lines: string[] = []
   for (const paragraph of String(text).split('\n')) {
     if (!paragraph) {
       lines.push('')
@@ -52,13 +60,13 @@ function wrapLines(ctx, text, maxWidth) {
   return lines
 }
 
-function paintText(ctx, el) {
+function paintText(ctx: CanvasRenderingContext2D, el: WireElement): void {
   const fontSize = el.fontSize || 16
   const lineHeight = fontSize * 1.2
   const maxW = Math.max(el.w, 1)
   const maxH = Math.max(el.h, 1)
-  let align = el.textAlign || 'left'
-  if (align === 'middle') align = 'center'
+  const ta = el.textAlign || 'left'
+  const align: CanvasTextAlign = ta === 'middle' ? 'center' : ta
 
   ctx.fillStyle = el.fill || '#1a1a1a'
   ctx.font = `${fontSize}px "IBM Plex Mono", ui-monospace, monospace`
@@ -90,7 +98,11 @@ function paintText(ctx, el) {
 }
 
 /** CSS border-box: fill outer box, stroke fully inside. */
-function paintBorderBoxShape(ctx, el, shape) {
+function paintBorderBoxShape(
+  ctx: CanvasRenderingContext2D,
+  el: WireElement,
+  shape: 'circle' | 'rect',
+): void {
   const sw = el.strokeWidth || 0
   const stroke = el.stroke || '#1a1a1a'
   const fill = el.fill
@@ -136,7 +148,7 @@ function paintBorderBoxShape(ctx, el, shape) {
 }
 
 /** Match WireElement image: fill + radius, then ImagePlaceholder SVG (inset ~1%). */
-function paintImage(ctx, el) {
+function paintImage(ctx: CanvasRenderingContext2D, el: WireElement): void {
   const d = DEFAULTS.image
   const r = el.cornerRadius || 0
   const fill = el.fill ?? d.fill
@@ -170,7 +182,7 @@ function paintImage(ctx, el) {
   ctx.restore()
 }
 
-function paintShape(ctx, el) {
+function paintShape(ctx: CanvasRenderingContext2D, el: WireElement): void {
   ctx.save()
   ctx.globalAlpha = el.opacity ?? 1
 
@@ -236,13 +248,17 @@ function paintShape(ctx, el) {
   ctx.restore()
 }
 
-export async function exportArtboardPng(artboard, elements) {
+export async function exportArtboardPng(
+  artboard: Artboard,
+  elements: WireElement[],
+): Promise<void> {
   if (document.fonts?.ready) await document.fonts.ready
 
   const canvas = document.createElement('canvas')
   canvas.width = artboard.width
   canvas.height = artboard.height
   const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Could not get canvas context')
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 

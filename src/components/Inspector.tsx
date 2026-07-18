@@ -1,6 +1,7 @@
 import { canGroup, sharedGroupId } from '../lib/elements'
+import type { TextAlign, VerticalAlign, WireElement } from '../lib/types'
 
-function AlignIcon({ align }) {
+function AlignIcon({ align }: { align: TextAlign }) {
   const lines =
     align === 'right'
       ? [
@@ -41,7 +42,7 @@ function AlignIcon({ align }) {
   )
 }
 
-function VAlignIcon({ align }) {
+function VAlignIcon({ align }: { align: VerticalAlign }) {
   // top / middle / bottom — horizontal bars stacked in the box
   const bars =
     align === 'bottom'
@@ -78,6 +79,23 @@ function VAlignIcon({ align }) {
   )
 }
 
+type InspectorProps = {
+  elements: WireElement[]
+  selectedIds: string[]
+  onUpdate: (id: string, patch: Partial<WireElement>) => void
+  onBringForward: () => void
+  onSendBackward: () => void
+  onBringToFront: () => void
+  onSendToBack: () => void
+  onDelete: () => void
+  onUngroup: (groupId: string) => void
+  onGroup: (ids?: string[]) => void
+  onRenameGroup?: (groupId: string, name: string) => void
+  canGroupSelection?: boolean
+  editingGroupId: string | null
+  onEditGroup: (groupId: string | null) => void
+}
+
 export default function Inspector({
   elements,
   selectedIds,
@@ -93,7 +111,7 @@ export default function Inspector({
   canGroupSelection,
   editingGroupId,
   onEditGroup,
-}) {
+}: InspectorProps) {
   const selected = elements.filter((e) => selectedIds.includes(e.id))
   const groupId = sharedGroupId(elements, selectedIds)
   const groupMeta = groupId
@@ -116,7 +134,7 @@ export default function Inspector({
         <h2 className="inspector-title">Inspector</h2>
         <p className="inspector-count">
           {groupId
-            ? `${groupMeta.groupName || 'Group'} · ${selected.length} atoms`
+            ? `${groupMeta?.groupName || 'Group'} · ${selected.length} atoms`
             : `${selected.length} selected`}
         </p>
         {groupId ? (
@@ -124,7 +142,7 @@ export default function Inspector({
             <label className="field-label">Group name</label>
             <input
               type="text"
-              value={groupMeta.groupName || ''}
+              value={groupMeta?.groupName || ''}
               onChange={(e) => onRenameGroup?.(groupId, e.target.value)}
               aria-label="Group name"
             />
@@ -178,7 +196,7 @@ export default function Inspector({
   }
 
   const el = selected[0]
-  const set = (patch) => onUpdate(el.id, patch)
+  const set = (patch: Partial<WireElement>) => onUpdate(el.id, patch)
 
   return (
     <aside className="inspector">
@@ -209,7 +227,7 @@ export default function Inspector({
             <button
               type="button"
               className="btn-ghost"
-              onClick={() => onEditGroup(el.groupId)}
+              onClick={() => onEditGroup(el.groupId!)}
             >
               Edit atoms
             </button>
@@ -218,7 +236,7 @@ export default function Inspector({
             type="button"
             className="btn-ghost"
             style={{ marginTop: '0.35rem' }}
-            onClick={() => onUngroup(el.groupId)}
+            onClick={() => onUngroup(el.groupId!)}
           >
             Ungroup
           </button>
@@ -284,11 +302,13 @@ export default function Inspector({
           />
           <label className="field-label">Horizontal</label>
           <div className="btn-row btn-row--icons">
-            {[
-              ['left', 'Align left'],
-              ['middle', 'Align center'],
-              ['right', 'Align right'],
-            ].map(([align, label]) => (
+            {(
+              [
+                ['left', 'Align left'],
+                ['middle', 'Align center'],
+                ['right', 'Align right'],
+              ] as const
+            ).map(([align, label]) => (
               <button
                 key={align}
                 type="button"
@@ -303,11 +323,13 @@ export default function Inspector({
           </div>
           <label className="field-label">Vertical</label>
           <div className="btn-row btn-row--icons">
-            {[
-              ['top', 'Align top'],
-              ['middle', 'Align middle'],
-              ['bottom', 'Align bottom'],
-            ].map(([align, label]) => (
+            {(
+              [
+                ['top', 'Align top'],
+                ['middle', 'Align middle'],
+                ['bottom', 'Align bottom'],
+              ] as const
+            ).map(([align, label]) => (
               <button
                 key={align}
                 type="button"

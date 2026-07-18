@@ -1,19 +1,28 @@
 import { DEFAULTS } from './constants'
 import { getBounds, snap, uid } from './geometry'
+import type {
+  AtomicType,
+  ComposedKind,
+  LayoutPart,
+  LayerTreeRow,
+  PlaceType,
+  Rect,
+  WireElement,
+} from './types'
 
-let nameCounters = {}
+let nameCounters: Record<string, number> = {}
 
-export function resetNameCounters() {
+export function resetNameCounters(): void {
   nameCounters = {}
 }
 
-function nextName(type) {
+function nextName(type: string): string {
   const label = type.charAt(0).toUpperCase() + type.slice(1)
   nameCounters[type] = (nameCounters[type] || 0) + 1
   return `${label} ${nameCounters[type]}`
 }
 
-function atom(type, overrides) {
+function atom(type: AtomicType, overrides: Partial<LayoutPart> & Pick<LayoutPart, 'x' | 'y' | 'w' | 'h'>): LayoutPart {
   const d = DEFAULTS[type]
   return {
     type,
@@ -31,7 +40,7 @@ function atom(type, overrides) {
 }
 
 /** Relative layouts (origin top-left of composition). */
-const COMPOSED_LAYOUTS = {
+const COMPOSED_LAYOUTS: Record<ComposedKind, () => LayoutPart[]> = {
   input: () => [
     atom('rect', { x: 0, y: 0, w: 200, h: 40, cornerRadius: 4, name: 'Field' }),
     atom('text', {
@@ -172,7 +181,7 @@ const COMPOSED_LAYOUTS = {
     atom('circle', { x: 154, y: 136, w: 8, h: 8, name: 'Dot 3' }),
   ],
   grid: () => {
-    const cells = []
+    const cells: LayoutPart[] = []
     const cols = 2
     const rows = 2
     const cellW = 100
@@ -195,15 +204,15 @@ const COMPOSED_LAYOUTS = {
   },
 }
 
-export const COMPOSED_KINDS = Object.keys(COMPOSED_LAYOUTS)
+export const COMPOSED_KINDS = Object.keys(COMPOSED_LAYOUTS) as ComposedKind[]
 
-export function isComposedKind(type) {
-  return COMPOSED_KINDS.includes(type)
+export function isComposedKind(type: string): type is ComposedKind {
+  return COMPOSED_KINDS.includes(type as ComposedKind)
 }
 
 /** Static preview elements for the palette (no ids/name counters). */
-export function getPalettePreview(type) {
-  let parts
+export function getPalettePreview(type: PlaceType): WireElement[] {
+  let parts: WireElement[]
   if (isComposedKind(type)) {
     parts = COMPOSED_LAYOUTS[type]().map((part, i) => ({
       id: `preview-${type}-${i}`,
@@ -249,7 +258,13 @@ export function getPalettePreview(type) {
   }))
 }
 
-export function createElement(type, x, y, z, snapOn) {
+export function createElement(
+  type: AtomicType,
+  x: number,
+  y: number,
+  z: number,
+  snapOn: boolean,
+): WireElement {
   const defaults = DEFAULTS[type]
   const w = defaults.w
   const h = defaults.h
@@ -276,12 +291,19 @@ export function createElement(type, x, y, z, snapOn) {
 }
 
 /** Build grouped atomic elements for a composed widget, centered on (cx, cy). */
-export function createComposed(kind, cx, cy, startZ, snapOn) {
+export function createComposed(
+  kind: ComposedKind,
+  cx: number,
+  cy: number,
+  startZ: number,
+  snapOn: boolean,
+): WireElement[] {
   const layout = COMPOSED_LAYOUTS[kind]
   if (!layout) return []
 
   const parts = layout()
   const bounds = getBounds(parts)
+  if (!bounds) return []
   const groupId = uid('grp')
   const groupName = nextName(kind)
   const ox = snap(cx - bounds.w / 2, snapOn)
@@ -300,16 +322,20 @@ export function createComposed(kind, cx, cy, startZ, snapOn) {
   }))
 }
 
-export function nextZ(elements) {
+export function nextZ(elements: WireElement[]): number {
   if (!elements.length) return 1
   return Math.max(...elements.map((e) => e.z)) + 1
 }
 
-export function getGroupMembers(elements, groupId) {
+export function getGroupMembers(elements: WireElement[], groupId: string): WireElement[] {
   return elements.filter((el) => el.groupId === groupId)
 }
 
-export function expandSelectionForGroups(elements, ids, editingGroupId) {
+export function expandSelectionForGroups(
+  elements: WireElement[],
+  ids: string[],
+  editingGroupId: string | null,
+): string[] {
   const set = new Set(ids)
   for (const id of ids) {
     const el = elements.find((e) => e.id === id)
@@ -320,7 +346,7 @@ export function expandSelectionForGroups(elements, ids, editingGroupId) {
   return [...set]
 }
 
-export function ungroup(elements, groupId) {
+export function ungroup(elements: WireElement[], groupId: string): WireElement[] {
   return elements.map((el) =>
     el.groupId === groupId
       ? { ...el, groupId: null, groupName: undefined, groupKind: undefined }
@@ -328,7 +354,12 @@ export function ungroup(elements, groupId) {
   )
 }
 
-export function scaleElementsToBounds(elements, origins, oldBounds, newBounds) {
+export function scaleElementsToBounds(
+  elements: WireElement[],
+  origins: WireElement[],
+  oldBounds: Rect,
+  newBounds: Rect,
+): WireElement[] {
   if (!oldBounds || oldBounds.w < 1 || oldBounds.h < 1) return elements
   const sx = newBounds.w / oldBounds.w
   const sy = newBounds.h / oldBounds.h
@@ -336,7 +367,7 @@ export function scaleElementsToBounds(elements, origins, oldBounds, newBounds) {
   return elements.map((el) => {
     const origin = originById.get(el.id)
     if (!origin) return el
-    const next = {
+    const next: WireElement = {
       ...el,
       x: newBounds.x + (origin.x - oldBounds.x) * sx,
       y: newBounds.y + (origin.y - oldBounds.y) * sy,
@@ -349,9 +380,9 @@ export function scaleElementsToBounds(elements, origins, oldBounds, newBounds) {
 }
 
 /** Top-level layer rows: groups + ungrouped atoms, sorted by max z desc. */
-export function buildLayerTree(elements) {
-  const groups = new Map()
-  const singles = []
+export function buildLayerTree(elements: WireElement[]): LayerTreeRow[] {
+  const groups = new Map<string, Extract<LayerTreeRow, { kind: 'group' }>>()
+  const singles: Extract<LayerTreeRow, { kind: 'element' }>[] = []
 
   for (const el of elements) {
     if (el.groupId) {
@@ -365,7 +396,7 @@ export function buildLayerTree(elements) {
           z: el.z,
         })
       }
-      const g = groups.get(el.groupId)
+      const g = groups.get(el.groupId)!
       g.children.push(el)
       g.z = Math.max(g.z, el.z)
     } else {
@@ -382,18 +413,18 @@ export function buildLayerTree(elements) {
 
 /** Reorder top-level layer tree rows; remaps z across all elements.
  *  `orderedTopIds` is top-first (front → back), matching the Layers list. */
-export function reorderLayerTree(elements, orderedTopIds) {
+export function reorderLayerTree(elements: WireElement[], orderedTopIds: string[]): WireElement[] {
   // orderedTopIds: group:xxx or element id
   const tree = buildLayerTree(elements)
-  const byKey = new Map()
+  const byKey = new Map<string, LayerTreeRow>()
   for (const row of tree) {
     const key = row.kind === 'group' ? `group:${row.groupId}` : row.el.id
     byKey.set(key, row)
   }
 
-  const ordered = orderedTopIds.map((key) => byKey.get(key)).filter(Boolean)
+  const ordered = orderedTopIds.map((key) => byKey.get(key)).filter((r): r is LayerTreeRow => Boolean(r))
   // Painter's order: back → front (bottom of list → top of list)
-  const flat = []
+  const flat: WireElement[] = []
   for (const row of [...ordered].reverse()) {
     if (row.kind === 'group') {
       flat.push(...[...row.children].sort((a, b) => a.z - b.z))
@@ -411,7 +442,11 @@ export function reorderLayerTree(elements, orderedTopIds) {
 }
 
 /** Reorder atoms inside a group (ids top-first). Keeps the group’s place in the stack. */
-export function reorderGroupChildren(elements, groupId, orderedChildIdsTopFirst) {
+export function reorderGroupChildren(
+  elements: WireElement[],
+  groupId: string,
+  orderedChildIdsTopFirst: string[],
+): WireElement[] {
   const tree = buildLayerTree(elements)
   const topKeys = tree.map((row) =>
     row.kind === 'group' ? `group:${row.groupId}` : row.el.id,
@@ -426,7 +461,7 @@ export function reorderGroupChildren(elements, groupId, orderedChildIdsTopFirst)
   return reorderLayerTree(next, topKeys)
 }
 
-export function reorderLayers(elements, orderedIdsTopFirst) {
+export function reorderLayers(elements: WireElement[], orderedIdsTopFirst: string[]): WireElement[] {
   const byId = Object.fromEntries(elements.map((e) => [e.id, e]))
   const n = orderedIdsTopFirst.length
   return orderedIdsTopFirst.map((id, i) => ({
@@ -435,11 +470,11 @@ export function reorderLayers(elements, orderedIdsTopFirst) {
   }))
 }
 
-export function setLayerDepth(elements, id, z) {
+export function setLayerDepth(elements: WireElement[], id: string, z: number | string): WireElement[] {
   return elements.map((el) => (el.id === id ? { ...el, z: Number(z) || 0 } : el))
 }
 
-export function bringForward(elements, ids) {
+export function bringForward(elements: WireElement[], ids: string[]): WireElement[] {
   const selected = new Set(ids)
   const sorted = [...elements].sort((a, b) => a.z - b.z)
   const result = sorted.map((el) => ({ ...el }))
@@ -453,7 +488,7 @@ export function bringForward(elements, ids) {
   return result.map((el, i) => ({ ...el, z: i + 1 }))
 }
 
-export function sendBackward(elements, ids) {
+export function sendBackward(elements: WireElement[], ids: string[]): WireElement[] {
   const selected = new Set(ids)
   const sorted = [...elements].sort((a, b) => a.z - b.z)
   const result = sorted.map((el) => ({ ...el }))
@@ -467,23 +502,23 @@ export function sendBackward(elements, ids) {
   return result.map((el, i) => ({ ...el, z: i + 1 }))
 }
 
-export function bringToFront(elements, ids) {
+export function bringToFront(elements: WireElement[], ids: string[]): WireElement[] {
   const selected = new Set(ids)
   const others = elements.filter((e) => !selected.has(e.id)).sort((a, b) => a.z - b.z)
   const sel = elements.filter((e) => selected.has(e.id)).sort((a, b) => a.z - b.z)
   return [...others, ...sel].map((el, i) => ({ ...el, z: i + 1 }))
 }
 
-export function sendToBack(elements, ids) {
+export function sendToBack(elements: WireElement[], ids: string[]): WireElement[] {
   const selected = new Set(ids)
   const others = elements.filter((e) => !selected.has(e.id)).sort((a, b) => a.z - b.z)
   const sel = elements.filter((e) => selected.has(e.id)).sort((a, b) => a.z - b.z)
   return [...sel, ...others].map((el, i) => ({ ...el, z: i + 1 }))
 }
 
-export function sharedGroupId(elements, ids) {
+export function sharedGroupId(elements: WireElement[], ids: string[]): string | null {
   if (!ids.length) return null
-  const members = ids.map((id) => elements.find((e) => e.id === id)).filter(Boolean)
+  const members = ids.map((id) => elements.find((e) => e.id === id)).filter((m): m is WireElement => Boolean(m))
   if (!members.length) return null
   const gid = members[0].groupId
   if (!gid) return null
@@ -494,7 +529,7 @@ export function sharedGroupId(elements, ids) {
 }
 
 /** Top-level layer units fully covered by ids (groups count as 1). */
-export function countGroupableUnits(elements, ids) {
+export function countGroupableUnits(elements: WireElement[], ids: string[]): number {
   const expanded = expandSelectionForGroups(elements, ids, null)
   if (expanded.length < 2) return 0
   if (sharedGroupId(elements, expanded)) return 0
@@ -512,12 +547,12 @@ export function countGroupableUnits(elements, ids) {
   return units
 }
 
-export function canGroup(elements, ids) {
+export function canGroup(elements: WireElement[], ids: string[]): boolean {
   return countGroupableUnits(elements, ids) >= 2
 }
 
 /** Merge selected top-level units into one group (composed widgets stay groups until regrouped). */
-export function groupElements(elements, ids) {
+export function groupElements(elements: WireElement[], ids: string[]): WireElement[] {
   const expanded = expandSelectionForGroups(elements, ids, null)
   if (expanded.length < 2) return elements
   if (sharedGroupId(elements, expanded)) return elements
@@ -539,26 +574,31 @@ export function groupElements(elements, ids) {
   )
 }
 
-export function renameGroup(elements, groupId, name) {
+export function renameGroup(elements: WireElement[], groupId: string, name: string): WireElement[] {
   return elements.map((el) =>
     el.groupId === groupId ? { ...el, groupName: name } : el,
   )
 }
 
 /** Clone selected elements with new ids/groups, offset by (dx, dy). */
-export function duplicateElements(elements, ids, dx = 16, dy = 16) {
+export function duplicateElements(
+  elements: WireElement[],
+  ids: string[],
+  dx = 16,
+  dy = 16,
+): { elements: WireElement[]; ids: string[] } {
   const selected = elements.filter((el) => ids.includes(el.id))
   if (!selected.length) return { elements: [], ids: [] }
 
-  const groupMap = new Map()
+  const groupMap = new Map<string, string>()
   let z = nextZ(elements)
   const created = selected.map((el) => {
     let groupId = el.groupId ?? null
     if (groupId) {
       if (!groupMap.has(groupId)) groupMap.set(groupId, uid('grp'))
-      groupId = groupMap.get(groupId)
+      groupId = groupMap.get(groupId)!
     }
-    const copy = {
+    const copy: WireElement = {
       ...el,
       id: uid(),
       x: el.x + dx,
