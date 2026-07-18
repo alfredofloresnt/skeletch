@@ -6,16 +6,20 @@ import Toolbar from './components/Toolbar'
 import {
   bringForward,
   bringToFront,
+  canGroup,
   createComposed,
   createElement,
   duplicateElements,
   expandSelectionForGroups,
+  groupElements,
   isComposedKind,
   nextZ,
+  renameGroup,
   reorderLayerTree,
   scaleElementsToBounds,
   sendBackward,
   sendToBack,
+  sharedGroupId,
   ungroup,
 } from './lib/elements'
 import { exportArtboardPng } from './lib/exportPng'
@@ -231,6 +235,23 @@ export default function App() {
         return
       }
 
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
+        e.preventDefault()
+        if (e.shiftKey) {
+          const gid = sharedGroupId(elements, selectedIds)
+          if (!gid) return
+          recordHistory()
+          setElements((prev) => ungroup(prev, gid))
+          setEditingGroupId(null)
+          return
+        }
+        if (!canGroup(elements, selectedIds)) return
+        recordHistory()
+        setElements((prev) => groupElements(prev, selectedIds))
+        setEditingGroupId(null)
+        return
+      }
+
       if (e.key === 'Escape') {
         if (editingGroupId) {
           setEditingGroupId(null)
@@ -296,6 +317,20 @@ export default function App() {
     setEditingGroupId(null)
   }
 
+  const handleGroup = (ids = selectedIds) => {
+    if (!canGroup(elements, ids)) return
+    recordHistory()
+    const next = groupElements(elements, ids)
+    setElements(next)
+    setSelectedIds(expandSelectionForGroups(next, ids, null))
+    setEditingGroupId(null)
+  }
+
+  const handleRenameGroup = (groupId, name) => {
+    recordHistory()
+    setElements((prev) => renameGroup(prev, groupId, name))
+  }
+
   const handleSave = () => {
     const doc = serializeWireframe({ artboard, presetId, snapOn, elements })
     downloadWireframe(doc)
@@ -357,6 +392,10 @@ export default function App() {
           onDragId={setDragLayerId}
           editingGroupId={editingGroupId}
           onEditGroup={setEditingGroupId}
+          onGroup={handleGroup}
+          onUngroup={handleUngroup}
+          onRenameGroup={handleRenameGroup}
+          canGroupSelection={canGroup(elements, selectedIds)}
         />
 
         <div className="stage-wrap" ref={stageWrapRef}>
@@ -388,6 +427,8 @@ export default function App() {
             onViewChange={onViewChange}
             editingGroupId={editingGroupId}
             onEditGroup={setEditingGroupId}
+            onGroup={handleGroup}
+            onUngroup={handleUngroup}
           />
         </div>
 
@@ -426,6 +467,9 @@ export default function App() {
             setSelectedIds([])
           }}
           onUngroup={handleUngroup}
+          onGroup={handleGroup}
+          onRenameGroup={handleRenameGroup}
+          canGroupSelection={canGroup(elements, selectedIds)}
           editingGroupId={editingGroupId}
           onEditGroup={setEditingGroupId}
         />

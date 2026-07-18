@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { GRID_SIZE, MAX_ZOOM, MIN_ZOOM } from '../lib/constants'
-import { expandSelectionForGroups, sharedGroupId } from '../lib/elements'
+import { canGroup, expandSelectionForGroups, sharedGroupId } from '../lib/elements'
 import {
   applyResize,
   getBounds,
@@ -10,6 +10,7 @@ import {
   snap,
   sortByZ,
 } from '../lib/geometry'
+import ActionMenu from './ActionMenu'
 import WireElement, { SelectionOverlay } from './WireElement'
 
 export default function Canvas({
@@ -31,11 +32,14 @@ export default function Canvas({
   onViewChange,
   editingGroupId,
   onEditGroup,
+  onGroup,
+  onUngroup,
 }) {
   const stageRef = useRef(null)
   const [spaceDown, setSpaceDown] = useState(false)
   const [panning, setPanning] = useState(false)
   const [marquee, setMarquee] = useState(null)
+  const [menu, setMenu] = useState(null)
   const interaction = useRef(null)
   const lastClick = useRef({ id: null, time: 0 })
   const viewRef = useRef({ pan, zoom })
@@ -455,6 +459,29 @@ export default function Canvas({
 
   const cursor = spaceDown || panning ? (panning ? 'grabbing' : 'grab') : placeType ? 'crosshair' : 'default'
 
+  const openActions = (e, ids = selectedIds) => {
+    e.preventDefault()
+    if (!ids.length) return
+    setMenu({ x: e.clientX, y: e.clientY, ids })
+  }
+
+  const menuIds = menu?.ids || selectedIds
+  const menuGroupId = sharedGroupId(elements, menuIds)
+  const menuItems = [
+    {
+      id: 'group',
+      label: 'Group',
+      disabled: !canGroup(elements, menuIds),
+      onSelect: () => onGroup?.(menuIds),
+    },
+    {
+      id: 'ungroup',
+      label: 'Ungroup',
+      disabled: !menuGroupId,
+      onSelect: () => menuGroupId && onUngroup?.(menuGroupId),
+    },
+  ]
+
   return (
     <div
       ref={stageRef}
@@ -464,6 +491,21 @@ export default function Canvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onContextMenu={(e) => {
+        const rect = getStageRect()
+        const world = screenToWorld(e.clientX, e.clientY, rect, pan, zoom)
+        const hit = hitTest(world.x, world.y)
+        if (!hit) {
+          setMenu(null)
+          return
+        }
+        let ids = selectedIds
+        if (!selectedIds.includes(hit.id)) {
+          ids = expandSelectionForGroups(elements, [hit.id], editingGroupId)
+          onSelect(ids)
+        }
+        openActions(e, ids)
+      }}
     >
       <div
         className="canvas-world"
@@ -526,8 +568,11 @@ export default function Canvas({
       <div className="canvas-hint">
         {editingGroupId
           ? 'Editing group atoms · Esc to exit'
-          : 'Pinch zoom · Scroll/drag pan · Shift-drag select · Double-click group to edit'}
+          : 'Pinch zoom · Scroll/drag pan · Shift-drag select · Double-click group to edit · Right-click to group'}
       </div>
+      {menu && (
+        <ActionMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
+      )}
     </div>
   )
 }

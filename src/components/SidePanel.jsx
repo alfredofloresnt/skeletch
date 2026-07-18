@@ -1,7 +1,13 @@
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { COMPOSED_TYPES, ELEMENT_TYPES } from '../lib/constants'
-import { buildLayerTree, getPalettePreview } from '../lib/elements'
+import {
+  buildLayerTree,
+  canGroup,
+  getPalettePreview,
+  sharedGroupId,
+} from '../lib/elements'
 import { getBounds } from '../lib/geometry'
+import ActionMenu from './ActionMenu'
 import WireElement from './WireElement'
 
 const PREVIEW_W = 72
@@ -92,8 +98,16 @@ export default function SidePanel({
   onDragId,
   editingGroupId,
   onEditGroup,
+  onGroup,
+  onUngroup,
+  onRenameGroup,
+  canGroupSelection,
 }) {
   const tree = buildLayerTree(elements)
+  const [menu, setMenu] = useState(null)
+  const [renamingGroupId, setRenamingGroupId] = useState(null)
+
+  const selectedGroupId = sharedGroupId(elements, selectedIds)
 
   const onDragStart = (e, key) => {
     onDragId(key)
@@ -137,6 +151,43 @@ export default function SidePanel({
       onEditGroup(null)
     }
   }
+
+  const openActions = (e, ensureIds) => {
+    e.preventDefault()
+    e.stopPropagation()
+    let ids = selectedIds
+    if (ensureIds?.length) {
+      const allIn = ensureIds.every((id) => selectedIds.includes(id))
+      if (!allIn) {
+        onSelect(ensureIds)
+        ids = ensureIds
+      }
+    }
+    setMenu({ x: e.clientX, y: e.clientY, ids })
+  }
+
+  const menuIds = menu?.ids || selectedIds
+  const menuGroupId = sharedGroupId(elements, menuIds)
+  const menuItems = [
+    {
+      id: 'group',
+      label: 'Group',
+      disabled: !canGroup(elements, menuIds),
+      onSelect: () => onGroup?.(menuIds),
+    },
+    {
+      id: 'ungroup',
+      label: 'Ungroup',
+      disabled: !menuGroupId,
+      onSelect: () => menuGroupId && onUngroup?.(menuGroupId),
+    },
+    {
+      id: 'rename',
+      label: 'Rename group',
+      disabled: !menuGroupId,
+      onSelect: () => menuGroupId && setRenamingGroupId(menuGroupId),
+    },
+  ]
 
   return (
     <aside className="side-panel">
@@ -201,6 +252,26 @@ export default function SidePanel({
               Editing group — double-click canvas empty or press Esc to exit.
             </p>
           )}
+          {selectedIds.length >= 2 && (
+            <div className="layers-actions">
+              <button
+                type="button"
+                className="btn-ghost"
+                disabled={!canGroupSelection}
+                onClick={() => onGroup?.()}
+              >
+                Group
+              </button>
+              <button
+                type="button"
+                className="btn-ghost"
+                disabled={!selectedGroupId}
+                onClick={() => selectedGroupId && onUngroup?.(selectedGroupId)}
+              >
+                Ungroup
+              </button>
+            </div>
+          )}
           <ul className="layer-list">
             {tree.map((row) => {
               if (row.kind === 'group') {
@@ -209,24 +280,64 @@ export default function SidePanel({
                 const selected =
                   childIds.length > 0 && childIds.every((id) => selectedIds.includes(id))
                 const open = editingGroupId === row.groupId
+                const renaming = renamingGroupId === row.groupId
                 return (
                   <li key={key} className="layer-group-block">
                     <div
                       className={`layer-row layer-row--group${selected ? ' is-selected' : ''}`}
-                      draggable
+                      draggable={!renaming}
                       onDragStart={(e) => onDragStart(e, key)}
                       onDragOver={onDragOver}
                       onDrop={(e) => onDrop(e, key)}
                       onDragEnd={() => onDragId(null)}
-                      onClick={(e) => selectGroup(row.groupId, e.metaKey || e.ctrlKey)}
+                      onClick={(e) => {
+                        if (renaming) return
+                        if (
+                          selected &&
+                          selectedIds.length >= 2 &&
+                          !e.metaKey &&
+                          !e.ctrlKey
+                        ) {
+                          openActions(e, childIds)
+                          return
+                        }
+                        selectGroup(row.groupId, e.metaKey || e.ctrlKey)
+                      }}
+                      onContextMenu={(e) => {
+                        if (!selected) selectGroup(row.groupId, false)
+                        openActions(e, childIds)
+                      }}
                       onDoubleClick={(e) => {
                         e.stopPropagation()
+                        if (e.altKey) {
+                          setRenamingGroupId(row.groupId)
+                          return
+                        }
                         onEditGroup(row.groupId)
                         onSelect(childIds.slice(0, 1))
                       }}
                     >
                       <span className="layer-type">{row.groupKind}</span>
-                      <span className="layer-name">{row.name}</span>
+                      {renaming ? (
+                        <input
+                          className="layer-rename"
+                          autoFocus
+                          defaultValue={row.name}
+                          onClick={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onBlur={(e) => {
+                            const next = e.target.value.trim() || 'Group'
+                            onRenameGroup?.(row.groupId, next)
+                            setRenamingGroupId(null)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.currentTarget.blur()
+                            if (e.key === 'Escape') setRenamingGroupId(null)
+                          }}
+                        />
+                      ) : (
+                        <span className="layer-name">{row.name}</span>
+                      )}
                       <span className="layer-z">{row.children.length}</span>
                     </div>
                     {open &&
@@ -246,6 +357,12 @@ export default function SidePanel({
                               onSelect([el.id])
                             }
                           }}
+                          onContextMenu={(e) => {
+                            e.stopPropagation()
+                            const ids = selectedIds.includes(el.id) ? selectedIds : [el.id]
+                            if (!selectedIds.includes(el.id)) onSelect([el.id])
+                            openActions(e, ids)
+                          }}
                         >
                           <span className="layer-type">{el.type}</span>
                           <span className="layer-name">{el.name}</span>
@@ -257,19 +374,24 @@ export default function SidePanel({
               }
 
               const el = row.el
+              const selected = selectedIds.includes(el.id)
               return (
                 <li
                   key={el.id}
-                  className={`layer-row${selectedIds.includes(el.id) ? ' is-selected' : ''}`}
+                  className={`layer-row${selected ? ' is-selected' : ''}`}
                   draggable
                   onDragStart={(e) => onDragStart(e, el.id)}
                   onDragOver={onDragOver}
                   onDrop={(e) => onDrop(e, el.id)}
                   onDragEnd={() => onDragId(null)}
                   onClick={(e) => {
+                    if (selected && selectedIds.length >= 2 && !e.metaKey && !e.ctrlKey) {
+                      openActions(e)
+                      return
+                    }
                     if (e.metaKey || e.ctrlKey) {
                       onSelect(
-                        selectedIds.includes(el.id)
+                        selected
                           ? selectedIds.filter((id) => id !== el.id)
                           : [...selectedIds, el.id],
                       )
@@ -277,6 +399,13 @@ export default function SidePanel({
                       onSelect([el.id])
                       onEditGroup(null)
                     }
+                  }}
+                  onContextMenu={(e) => {
+                    if (!selected) {
+                      onSelect([el.id])
+                      onEditGroup(null)
+                    }
+                    openActions(e, selected ? selectedIds : [el.id])
                   }}
                 >
                   <span className="layer-type">{el.type}</span>
@@ -286,6 +415,14 @@ export default function SidePanel({
               )
             })}
           </ul>
+          {menu && (
+            <ActionMenu
+              x={menu.x}
+              y={menu.y}
+              items={menuItems}
+              onClose={() => setMenu(null)}
+            />
+          )}
         </div>
       )}
     </aside>

@@ -425,6 +425,58 @@ export function sharedGroupId(elements, ids) {
   return gid
 }
 
+/** Top-level layer units fully covered by ids (groups count as 1). */
+export function countGroupableUnits(elements, ids) {
+  const expanded = expandSelectionForGroups(elements, ids, null)
+  if (expanded.length < 2) return 0
+  if (sharedGroupId(elements, expanded)) return 0
+
+  const selected = new Set(expanded)
+  const tree = buildLayerTree(elements)
+  let units = 0
+  for (const row of tree) {
+    if (row.kind === 'group') {
+      if (row.children.every((c) => selected.has(c.id))) units += 1
+    } else if (selected.has(row.el.id)) {
+      units += 1
+    }
+  }
+  return units
+}
+
+export function canGroup(elements, ids) {
+  return countGroupableUnits(elements, ids) >= 2
+}
+
+/** Merge selected top-level units into one group (composed widgets stay groups until regrouped). */
+export function groupElements(elements, ids) {
+  const expanded = expandSelectionForGroups(elements, ids, null)
+  if (expanded.length < 2) return elements
+  if (sharedGroupId(elements, expanded)) return elements
+  if (countGroupableUnits(elements, ids) < 2) return elements
+
+  const newId = uid('grp')
+  const newName = nextName('group')
+  const selected = new Set(expanded)
+
+  return elements.map((el) =>
+    selected.has(el.id)
+      ? {
+          ...el,
+          groupId: newId,
+          groupName: newName,
+          groupKind: 'group',
+        }
+      : el,
+  )
+}
+
+export function renameGroup(elements, groupId, name) {
+  return elements.map((el) =>
+    el.groupId === groupId ? { ...el, groupName: name } : el,
+  )
+}
+
 /** Clone selected elements with new ids/groups, offset by (dx, dy). */
 export function duplicateElements(elements, ids, dx = 16, dy = 16) {
   const selected = elements.filter((el) => ids.includes(el.id))

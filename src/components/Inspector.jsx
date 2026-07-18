@@ -1,4 +1,4 @@
-import { sharedGroupId } from '../lib/elements'
+import { canGroup, sharedGroupId } from '../lib/elements'
 
 function AlignIcon({ align }) {
   const lines =
@@ -88,6 +88,9 @@ export default function Inspector({
   onSendToBack,
   onDelete,
   onUngroup,
+  onGroup,
+  onRenameGroup,
+  canGroupSelection,
   editingGroupId,
   onEditGroup,
 }) {
@@ -96,6 +99,7 @@ export default function Inspector({
   const groupMeta = groupId
     ? elements.find((e) => e.groupId === groupId)
     : null
+  const allowGroup = canGroupSelection ?? canGroup(elements, selectedIds)
 
   if (selected.length === 0) {
     return (
@@ -115,10 +119,16 @@ export default function Inspector({
             ? `${groupMeta.groupName || 'Group'} · ${selected.length} atoms`
             : `${selected.length} selected`}
         </p>
-        {groupId && (
+        {groupId ? (
           <div className="inspector-section">
-            <label className="field-label">Group</label>
-            <p className="panel-hint" style={{ marginBottom: '0.5rem' }}>
+            <label className="field-label">Group name</label>
+            <input
+              type="text"
+              value={groupMeta.groupName || ''}
+              onChange={(e) => onRenameGroup?.(groupId, e.target.value)}
+              aria-label="Group name"
+            />
+            <p className="panel-hint" style={{ margin: '0.5rem 0' }}>
               Double-click to edit atoms. Ungroup to detach.
             </p>
             <div className="btn-row">
@@ -129,6 +139,18 @@ export default function Inspector({
                 Ungroup
               </button>
             </div>
+          </div>
+        ) : (
+          <div className="inspector-section">
+            <label className="field-label">Group</label>
+            <button
+              type="button"
+              className="btn-ghost"
+              disabled={!allowGroup}
+              onClick={() => onGroup?.(selectedIds)}
+            >
+              Group selection
+            </button>
           </div>
         )}
         <div className="inspector-section">
@@ -162,9 +184,19 @@ export default function Inspector({
     <aside className="inspector">
       <h2 className="inspector-title">Inspector</h2>
       <p className="inspector-meta">
-        {el.name} · {el.type}
+        {el.type}
         {el.groupName ? ` · ${el.groupName}` : ''}
       </p>
+
+      <div className="inspector-section">
+        <label className="field-label">Name</label>
+        <input
+          type="text"
+          value={el.name || ''}
+          onChange={(e) => set({ name: e.target.value })}
+          aria-label="Element name"
+        />
+      </div>
 
       {el.groupId && (
         <div className="inspector-section">
@@ -231,29 +263,6 @@ export default function Inspector({
               onChange={(e) => set({ h: Number(e.target.value) })}
             />
           </label>
-        </div>
-      </div>
-
-      <div className="inspector-section">
-        <label className="field-label">Layer depth</label>
-        <input
-          type="number"
-          value={el.z}
-          onChange={(e) => set({ z: Number(e.target.value) })}
-        />
-        <div className="btn-row">
-          <button type="button" className="btn-ghost" onClick={onBringToFront}>
-            Front
-          </button>
-          <button type="button" className="btn-ghost" onClick={onBringForward}>
-            Forward
-          </button>
-          <button type="button" className="btn-ghost" onClick={onSendBackward}>
-            Back
-          </button>
-          <button type="button" className="btn-ghost" onClick={onSendToBack}>
-            Bottom
-          </button>
         </div>
       </div>
 

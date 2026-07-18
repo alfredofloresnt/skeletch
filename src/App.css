@@ -473,6 +473,69 @@ textarea {
   color: var(--muted);
 }
 
+.layers-actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+}
+
+.layers-actions .btn-ghost {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.layers-actions .btn-ghost:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.layer-rename {
+  width: 100%;
+  min-width: 0;
+  background: var(--ink);
+  border: 1px solid var(--accent);
+  color: var(--paper);
+  border-radius: 2px;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.action-menu {
+  position: fixed;
+  z-index: 10050;
+  min-width: 10rem;
+  padding: 0.25rem;
+  background: rgba(28, 30, 34, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+}
+
+.action-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--paper);
+  padding: 0.45rem 0.65rem;
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.action-menu-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.action-menu-item:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .inspector-title {
   margin: 0 0 0.35rem;
   font-size: 0.75rem;
@@ -527,6 +590,7 @@ textarea {
 }
 
 .inspector input[type='number'],
+.inspector input[type='text'],
 .inspector textarea {
   width: 100%;
 }
