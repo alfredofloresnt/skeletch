@@ -15,6 +15,7 @@ import {
   isComposedKind,
   nextZ,
   renameGroup,
+  reorderGroupChildren,
   reorderLayerTree,
   scaleElementsToBounds,
   sendBackward,
@@ -387,6 +388,10 @@ export default function App() {
           onReorderTree={(keys) => {
             recordHistory()
             setElements((prev) => reorderLayerTree(prev, keys))
+          }}
+          onReorderGroupChildren={(groupId, childIds) => {
+            recordHistory()
+            setElements((prev) => reorderGroupChildren(prev, groupId, childIds))
           }}
           dragId={dragLayerId}
           onDragId={setDragLayerId}

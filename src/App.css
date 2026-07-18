@@ -436,6 +436,7 @@ textarea {
 }
 
 .layer-row {
+  position: relative;
   display: grid;
   grid-template-columns: auto 1fr auto;
   gap: 0.5rem;
@@ -444,13 +445,48 @@ textarea {
   background: var(--steel);
   border: 1px solid transparent;
   border-radius: 2px;
-  cursor: pointer;
+  cursor: grab;
   font-size: 0.8rem;
+  user-select: none;
+}
+
+.layer-row:active {
+  cursor: grabbing;
 }
 
 .layer-row.is-selected {
   border-color: var(--select);
   background: rgba(31, 111, 235, 0.12);
+}
+
+.layer-row.is-dragging {
+  opacity: 0.45;
+}
+
+.layer-drop-line {
+  position: absolute;
+  left: 0.25rem;
+  right: 0.25rem;
+  height: 2px;
+  margin: 0;
+  padding: 0;
+  background: var(--select);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.layer-drop-line--before {
+  top: -2px;
+}
+
+.layer-drop-line--after {
+  bottom: -2px;
+}
+
+.layer-list,
+.layer-group-block {
+  overflow: visible;
 }
 
 .layer-type {

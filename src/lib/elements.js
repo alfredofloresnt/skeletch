@@ -328,7 +328,8 @@ export function buildLayerTree(elements) {
   return [...groups.values(), ...singles].sort((a, b) => b.z - a.z)
 }
 
-/** Reorder top-level layer tree rows; remaps z across all elements. */
+/** Reorder top-level layer tree rows; remaps z across all elements.
+ *  `orderedTopIds` is top-first (front → back), matching the Layers list. */
 export function reorderLayerTree(elements, orderedTopIds) {
   // orderedTopIds: group:xxx or element id
   const tree = buildLayerTree(elements)
@@ -339,10 +340,10 @@ export function reorderLayerTree(elements, orderedTopIds) {
   }
 
   const ordered = orderedTopIds.map((key) => byKey.get(key)).filter(Boolean)
+  // Painter's order: back → front (bottom of list → top of list)
   const flat = []
-  for (const row of ordered) {
+  for (const row of [...ordered].reverse()) {
     if (row.kind === 'group') {
-      // keep relative child order (top first in tree = higher z)
       flat.push(...[...row.children].sort((a, b) => a.z - b.z))
     } else {
       flat.push(row.el)
@@ -350,12 +351,27 @@ export function reorderLayerTree(elements, orderedTopIds) {
   }
 
   const byId = Object.fromEntries(elements.map((e) => [e.id, e]))
-  // Include any leftover elements not in tree order
   for (const el of elements) {
     if (!flat.find((f) => f.id === el.id)) flat.push(el)
   }
 
   return flat.map((el, i) => ({ ...byId[el.id], z: i + 1 }))
+}
+
+/** Reorder atoms inside a group (ids top-first). Keeps the group’s place in the stack. */
+export function reorderGroupChildren(elements, groupId, orderedChildIdsTopFirst) {
+  const tree = buildLayerTree(elements)
+  const topKeys = tree.map((row) =>
+    row.kind === 'group' ? `group:${row.groupId}` : row.el.id,
+  )
+  const n = orderedChildIdsTopFirst.length
+  const next = elements.map((el) => {
+    if (el.groupId !== groupId) return el
+    const idx = orderedChildIdsTopFirst.indexOf(el.id)
+    if (idx < 0) return el
+    return { ...el, z: n - idx }
+  })
+  return reorderLayerTree(next, topKeys)
 }
 
 export function reorderLayers(elements, orderedIdsTopFirst) {

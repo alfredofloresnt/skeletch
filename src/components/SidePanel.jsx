@@ -94,6 +94,7 @@ export default function SidePanel({
   selectedIds,
   onSelect,
   onReorderTree,
+  onReorderGroupChildren,
   dragId,
   onDragId,
   editingGroupId,
@@ -106,40 +107,119 @@ export default function SidePanel({
   const tree = buildLayerTree(elements)
   const [menu, setMenu] = useState(null)
   const [renamingGroupId, setRenamingGroupId] = useState(null)
+  const [dropHint, setDropHint] = useState(null) // { key, edge: 'before' | 'after', scope: 'tree' | groupId }
+  const dragScopeRef = useRef('tree')
+  const didDragRef = useRef(false)
 
   const selectedGroupId = sharedGroupId(elements, selectedIds)
 
-  const onDragStart = (e, key) => {
+  const topKeys = tree.map((row) =>
+    row.kind === 'group' ? `group:${row.groupId}` : row.el.id,
+  )
+
+  const moveKey = (keys, fromKey, overKey, edge) => {
+    if (!fromKey || !overKey || fromKey === overKey) return null
+    const next = [...keys]
+    const from = next.indexOf(fromKey)
+    if (from < 0) return null
+    next.splice(from, 1)
+    let to = next.indexOf(overKey)
+    if (to < 0) return null
+    if (edge === 'after') to += 1
+    next.splice(to, 0, fromKey)
+    return next
+  }
+
+  const edgeFromEvent = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    return e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+  }
+
+  const onDragStart = (e, key, scope = 'tree') => {
+    didDragRef.current = true
+    dragScopeRef.current = scope
     onDragId(key)
     e.dataTransfer.effectAllowed = 'move'
     e.dataTransfer.setData('text/plain', key)
   }
 
-  const onDragOver = (e) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
+  const onDragEnd = () => {
+    onDragId(null)
+    setDropHint(null)
+    dragScopeRef.current = 'tree'
+    window.setTimeout(() => {
+      didDragRef.current = false
+    }, 0)
   }
 
-  const onDrop = (e, overKey) => {
+  const onDragOverRow = (e, key, scope = 'tree') => {
     e.preventDefault()
-    const fromKey = dragId || e.dataTransfer.getData('text/plain')
-    if (!fromKey || fromKey === overKey) {
-      onDragId(null)
+    e.stopPropagation()
+    if (dragScopeRef.current !== scope) {
+      setDropHint(null)
       return
     }
-    const keys = tree.map((row) =>
-      row.kind === 'group' ? `group:${row.groupId}` : row.el.id,
+    const fromKey = dragId
+    if (!fromKey || fromKey === key) {
+      setDropHint(null)
+      return
+    }
+    e.dataTransfer.dropEffect = 'move'
+    const edge = edgeFromEvent(e)
+    setDropHint((prev) =>
+      prev?.key === key && prev?.scope === scope && prev?.edge === edge
+        ? prev
+        : { key, edge, scope },
     )
-    const from = keys.indexOf(fromKey)
-    const to = keys.indexOf(overKey)
-    if (from < 0 || to < 0) {
-      onDragId(null)
+  }
+
+  const onDropRow = (e, overKey, scope = 'tree') => {
+    e.preventDefault()
+    e.stopPropagation()
+    const fromKey = dragId || e.dataTransfer.getData('text/plain')
+    const edge = dropHint?.key === overKey ? dropHint.edge : edgeFromEvent(e)
+    const dragScope = dragScopeRef.current
+    setDropHint(null)
+    onDragId(null)
+    if (!fromKey || fromKey === overKey || dragScope !== scope) return
+
+    if (scope === 'tree') {
+      if (!topKeys.includes(fromKey) || !topKeys.includes(overKey)) return
+      const next = moveKey(topKeys, fromKey, overKey, edge)
+      if (next) onReorderTree(next)
       return
     }
-    keys.splice(from, 1)
-    keys.splice(to, 0, fromKey)
-    onReorderTree(keys)
-    onDragId(null)
+
+    const groupRow = tree.find((r) => r.kind === 'group' && r.groupId === scope)
+    if (!groupRow) return
+    const childIds = groupRow.children.map((c) => c.id)
+    if (!childIds.includes(fromKey) || !childIds.includes(overKey)) return
+    const next = moveKey(childIds, fromKey, overKey, edge)
+    if (next) onReorderGroupChildren?.(scope, next)
+  }
+
+  const dropClass = (key, scope = 'tree') => {
+    if (!dropHint || dropHint.key !== key || dropHint.scope !== scope) return ''
+    return dropHint.edge === 'before' ? ' drop-before' : ' drop-after'
+  }
+
+  const DropLine = ({ rowKey, scope = 'tree' }) => {
+    if (!dropHint || dropHint.key !== rowKey || dropHint.scope !== scope) return null
+    return (
+      <div
+        className={`layer-drop-line layer-drop-line--${dropHint.edge}`}
+        aria-hidden
+      />
+    )
+  }
+
+  const guardClick = (handler) => (e) => {
+    if (didDragRef.current) {
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
+    handler(e)
   }
 
   const selectGroup = (groupId, additive) => {
@@ -284,13 +364,13 @@ export default function SidePanel({
                 return (
                   <li key={key} className="layer-group-block">
                     <div
-                      className={`layer-row layer-row--group${selected ? ' is-selected' : ''}`}
+                      className={`layer-row layer-row--group${selected ? ' is-selected' : ''}${dragId === key ? ' is-dragging' : ''}${dropClass(key, 'tree')}`}
                       draggable={!renaming}
-                      onDragStart={(e) => onDragStart(e, key)}
-                      onDragOver={onDragOver}
-                      onDrop={(e) => onDrop(e, key)}
-                      onDragEnd={() => onDragId(null)}
-                      onClick={(e) => {
+                      onDragStart={(e) => onDragStart(e, key, 'tree')}
+                      onDragOver={(e) => onDragOverRow(e, key, 'tree')}
+                      onDrop={(e) => onDropRow(e, key, 'tree')}
+                      onDragEnd={onDragEnd}
+                      onClick={guardClick((e) => {
                         if (renaming) return
                         if (
                           selected &&
@@ -302,7 +382,7 @@ export default function SidePanel({
                           return
                         }
                         selectGroup(row.groupId, e.metaKey || e.ctrlKey)
-                      }}
+                      })}
                       onContextMenu={(e) => {
                         if (!selected) selectGroup(row.groupId, false)
                         openActions(e, childIds)
@@ -317,6 +397,7 @@ export default function SidePanel({
                         onSelect(childIds.slice(0, 1))
                       }}
                     >
+                      <DropLine rowKey={key} scope="tree" />
                       <span className="layer-type">{row.groupKind}</span>
                       {renaming ? (
                         <input
@@ -344,8 +425,13 @@ export default function SidePanel({
                       row.children.map((el) => (
                         <div
                           key={el.id}
-                          className={`layer-row layer-row--child${selectedIds.includes(el.id) ? ' is-selected' : ''}`}
-                          onClick={(e) => {
+                          className={`layer-row layer-row--child${selectedIds.includes(el.id) ? ' is-selected' : ''}${dragId === el.id ? ' is-dragging' : ''}${dropClass(el.id, row.groupId)}`}
+                          draggable
+                          onDragStart={(e) => onDragStart(e, el.id, row.groupId)}
+                          onDragOver={(e) => onDragOverRow(e, el.id, row.groupId)}
+                          onDrop={(e) => onDropRow(e, el.id, row.groupId)}
+                          onDragEnd={onDragEnd}
+                          onClick={guardClick((e) => {
                             e.stopPropagation()
                             if (e.metaKey || e.ctrlKey) {
                               onSelect(
@@ -356,7 +442,7 @@ export default function SidePanel({
                             } else {
                               onSelect([el.id])
                             }
-                          }}
+                          })}
                           onContextMenu={(e) => {
                             e.stopPropagation()
                             const ids = selectedIds.includes(el.id) ? selectedIds : [el.id]
@@ -364,6 +450,7 @@ export default function SidePanel({
                             openActions(e, ids)
                           }}
                         >
+                          <DropLine rowKey={el.id} scope={row.groupId} />
                           <span className="layer-type">{el.type}</span>
                           <span className="layer-name">{el.name}</span>
                           <span className="layer-z">z {el.z}</span>
@@ -378,13 +465,13 @@ export default function SidePanel({
               return (
                 <li
                   key={el.id}
-                  className={`layer-row${selected ? ' is-selected' : ''}`}
+                  className={`layer-row${selected ? ' is-selected' : ''}${dragId === el.id ? ' is-dragging' : ''}${dropClass(el.id, 'tree')}`}
                   draggable
-                  onDragStart={(e) => onDragStart(e, el.id)}
-                  onDragOver={onDragOver}
-                  onDrop={(e) => onDrop(e, el.id)}
-                  onDragEnd={() => onDragId(null)}
-                  onClick={(e) => {
+                  onDragStart={(e) => onDragStart(e, el.id, 'tree')}
+                  onDragOver={(e) => onDragOverRow(e, el.id, 'tree')}
+                  onDrop={(e) => onDropRow(e, el.id, 'tree')}
+                  onDragEnd={onDragEnd}
+                  onClick={guardClick((e) => {
                     if (selected && selectedIds.length >= 2 && !e.metaKey && !e.ctrlKey) {
                       openActions(e)
                       return
@@ -399,7 +486,7 @@ export default function SidePanel({
                       onSelect([el.id])
                       onEditGroup(null)
                     }
-                  }}
+                  })}
                   onContextMenu={(e) => {
                     if (!selected) {
                       onSelect([el.id])
@@ -408,6 +495,7 @@ export default function SidePanel({
                     openActions(e, selected ? selectedIds : [el.id])
                   }}
                 >
+                  <DropLine rowKey={el.id} scope="tree" />
                   <span className="layer-type">{el.type}</span>
                   <span className="layer-name">{el.name}</span>
                   <span className="layer-z">z {el.z}</span>
