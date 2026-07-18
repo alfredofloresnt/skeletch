@@ -34,7 +34,7 @@ import {
 } from './lib/wireframeFormat'
 import './App.css'
 
-const DEFAULT_PRESET = FRAME_PRESETS[0]
+const DEFAULT_PRESET = FRAME_PRESETS.find((p) => p.id === 'desktop') ?? FRAME_PRESETS[0]
 const HISTORY_LIMIT = 100
 
 type HistorySnapshot = {
