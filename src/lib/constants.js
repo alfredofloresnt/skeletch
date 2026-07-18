@@ -7,20 +7,20 @@ export const FRAME_PRESETS = [
 ]
 
 export const ELEMENT_TYPES = [
-  { type: 'rect', label: 'Rectangle', icon: 'rect' },
-  { type: 'circle', label: 'Circle', icon: 'circle' },
-  { type: 'line', label: 'Line', icon: 'line' },
-  { type: 'text', label: 'Text', icon: 'text' },
-  { type: 'image', label: 'Image', icon: 'image' },
+  { type: 'rect', label: 'Rectangle' },
+  { type: 'circle', label: 'Circle' },
+  { type: 'line', label: 'Line' },
+  { type: 'text', label: 'Text' },
+  { type: 'image', label: 'Image' },
 ]
 
 export const COMPOSED_TYPES = [
-  { type: 'input', label: 'Input', icon: 'input' },
-  { type: 'button', label: 'Button', icon: 'button' },
-  { type: 'checkbox', label: 'Checkbox', icon: 'checkbox' },
-  { type: 'dropdown', label: 'Dropdown', icon: 'dropdown' },
-  { type: 'card', label: 'Card', icon: 'card' },
-  { type: 'grid', label: 'Grid', icon: 'grid' },
+  { type: 'input', label: 'Input' },
+  { type: 'button', label: 'Button' },
+  { type: 'checkbox', label: 'Checkbox' },
+  { type: 'dropdown', label: 'Dropdown' },
+  { type: 'card', label: 'Card' },
+  { type: 'grid', label: 'Grid' },
 ]
 
 export const DEFAULTS = {
@@ -55,7 +55,8 @@ export const DEFAULTS = {
     h: 32,
     text: 'Text',
     fontSize: 16,
-    textAlign: 'left',
+    textAlign: 'middle',
+    verticalAlign: 'middle',
     fill: '#1a1a1a',
     stroke: 'transparent',
     strokeWidth: 0,

@@ -1,90 +1,36 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { COMPOSED_TYPES, ELEMENT_TYPES } from '../lib/constants'
-import { buildLayerTree } from '../lib/elements'
+import { buildLayerTree, getPalettePreview } from '../lib/elements'
+import { getBounds } from '../lib/geometry'
+import WireElement from './WireElement'
 
-function PaletteIcon({ icon }) {
-  switch (icon) {
-    case 'rect':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <rect x="4" y="6" width="16" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-      )
-    case 'circle':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-      )
-    case 'line':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <line x1="5" y1="19" x2="19" y2="5" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-      )
-    case 'text':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <path d="M6 7h12M12 7v10M9 17h6" fill="none" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-      )
-    case 'image':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <rect x="4" y="5" width="16" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          <line x1="4" y1="5" x2="20" y2="19" stroke="currentColor" strokeWidth="1.5" />
-          <line x1="20" y1="5" x2="4" y2="19" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-      )
-    case 'input':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <rect x="3" y="8" width="18" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          <line x1="6" y1="12" x2="12" y2="12" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-      )
-    case 'button':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <rect x="4" y="8" width="16" height="8" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-      )
-    case 'checkbox':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <rect x="4" y="4" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M6 8l1.5 1.5L11 6" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          <line x1="14" y1="8" x2="20" y2="8" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-      )
-    case 'dropdown':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <rect x="3" y="7" width="18" height="10" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M15 10l2 2 2-2" fill="none" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-      )
-    case 'card':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <rect x="4" y="3" width="16" height="18" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          <rect x="6" y="5" width="12" height="6" fill="none" stroke="currentColor" strokeWidth="1.2" />
-          <line x1="6" y1="14" x2="16" y2="14" stroke="currentColor" strokeWidth="1.2" />
-          <line x1="6" y1="17" x2="13" y2="17" stroke="currentColor" strokeWidth="1.2" />
-        </svg>
-      )
-    case 'grid':
-      return (
-        <svg viewBox="0 0 24 24" aria-hidden>
-          <rect x="3" y="3" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          <rect x="13" y="3" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          <rect x="3" y="13" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          <rect x="13" y="13" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-      )
-    default:
-      return null
-  }
+const PREVIEW_W = 72
+const PREVIEW_H = 52
+
+function PalettePreview({ type }) {
+  const els = useMemo(() => getPalettePreview(type), [type])
+  const bounds = useMemo(() => getBounds(els), [els])
+
+  if (!bounds || bounds.w < 1 || bounds.h < 1) return null
+
+  const scale = Math.min(PREVIEW_W / bounds.w, PREVIEW_H / bounds.h)
+
+  return (
+    <div className="palette-preview" aria-hidden>
+      <div
+        className="palette-preview-stage"
+        style={{
+          width: bounds.w,
+          height: bounds.h,
+          transform: `scale(${scale})`,
+        }}
+      >
+        {els.map((el) => (
+          <WireElement key={el.id} el={el} />
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function PaletteButton({ item, placeType, onPlaceType, onPaletteDragStart }) {
@@ -126,7 +72,7 @@ function PaletteButton({ item, placeType, onPlaceType, onPaletteDragStart }) {
         startRef.current = null
       }}
     >
-      <PaletteIcon icon={item.icon} />
+      <PalettePreview type={item.type} />
       <span>{item.label}</span>
     </button>
   )

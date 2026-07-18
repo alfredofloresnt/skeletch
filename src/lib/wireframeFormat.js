@@ -46,6 +46,7 @@ function sanitizeElement(el) {
     text: el.text,
     fontSize: el.fontSize,
     textAlign: el.textAlign || 'left',
+    verticalAlign: el.verticalAlign || 'top',
     groupId: el.groupId ?? null,
     groupName: el.groupName,
     groupKind: el.groupKind,

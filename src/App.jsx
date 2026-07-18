@@ -313,8 +313,8 @@ export default function App() {
               )
             }}
             onResizeElement={(id, box) => updateElement(id, box)}
-            onResizeGroup={(ids, oldBounds, newBounds) => {
-              setElements((prev) => scaleElementsToBounds(prev, ids, oldBounds, newBounds))
+            onResizeGroup={(origins, oldBounds, newBounds) => {
+              setElements((prev) => scaleElementsToBounds(prev, origins, oldBounds, newBounds))
             }}
             onPlace={place}
             onClearPlace={() => setPlaceType(null)}

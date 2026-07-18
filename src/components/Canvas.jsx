@@ -328,7 +328,7 @@ export default function Canvas({
         handle,
         startWorld: world,
         originBounds: { ...bounds },
-        ids: selectedIds.slice(),
+        origins: selected.map((el) => ({ ...el })),
         keepAspect: e.shiftKey,
       }
     } else {
@@ -415,7 +415,7 @@ export default function Canvas({
         snapOn,
         keepAspect: e.shiftKey || ix.keepAspect,
       })
-      onResizeGroup(ix.ids, ix.originBounds, next)
+      onResizeGroup(ix.origins, ix.originBounds, next)
     }
   }
 

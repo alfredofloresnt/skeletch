@@ -25,6 +25,7 @@ function atom(type, overrides) {
     text: d.text,
     fontSize: d.fontSize,
     textAlign: d.textAlign || 'left',
+    verticalAlign: d.verticalAlign || 'top',
     ...overrides,
   }
 }
@@ -35,23 +36,27 @@ const COMPOSED_LAYOUTS = {
     atom('rect', { x: 0, y: 0, w: 200, h: 40, cornerRadius: 4, name: 'Field' }),
     atom('text', {
       x: 12,
-      y: 10,
-      w: 160,
-      h: 20,
+      y: 0,
+      w: 176,
+      h: 40,
       text: 'Placeholder',
       fontSize: 14,
+      textAlign: 'left',
+      verticalAlign: 'middle',
       name: 'Label',
     }),
   ],
   button: () => [
     atom('rect', { x: 0, y: 0, w: 120, h: 40, cornerRadius: 6, name: 'Bg' }),
     atom('text', {
-      x: 28,
-      y: 10,
-      w: 64,
-      h: 20,
+      x: 0,
+      y: 0,
+      w: 120,
+      h: 40,
       text: 'Button',
       fontSize: 14,
+      textAlign: 'middle',
+      verticalAlign: 'middle',
       name: 'Label',
     }),
   ],
@@ -66,6 +71,8 @@ const COMPOSED_LAYOUTS = {
       h: 20,
       text: 'Checkbox',
       fontSize: 14,
+      textAlign: 'left',
+      verticalAlign: 'middle',
       name: 'Label',
     }),
   ],
@@ -73,11 +80,13 @@ const COMPOSED_LAYOUTS = {
     atom('rect', { x: 0, y: 0, w: 180, h: 40, cornerRadius: 4, name: 'Field' }),
     atom('text', {
       x: 12,
-      y: 10,
+      y: 0,
       w: 120,
-      h: 20,
+      h: 40,
       text: 'Select…',
       fontSize: 14,
+      textAlign: 'left',
+      verticalAlign: 'middle',
       name: 'Label',
     }),
     atom('line', { x: 152, y: 16, w: 8, h: 8, name: 'Chevron L' }),
@@ -93,6 +102,8 @@ const COMPOSED_LAYOUTS = {
       h: 24,
       text: 'Card title',
       fontSize: 16,
+      textAlign: 'left',
+      verticalAlign: 'top',
       name: 'Title',
     }),
     atom('text', {
@@ -102,6 +113,8 @@ const COMPOSED_LAYOUTS = {
       h: 48,
       text: 'Supporting body copy for the card.',
       fontSize: 13,
+      textAlign: 'left',
+      verticalAlign: 'top',
       name: 'Body',
     }),
     atom('rect', { x: 16, y: 228, w: 72, h: 20, cornerRadius: 4, name: 'CTA' }),
@@ -136,6 +149,54 @@ export function isComposedKind(type) {
   return COMPOSED_KINDS.includes(type)
 }
 
+/** Static preview elements for the palette (no ids/name counters). */
+export function getPalettePreview(type) {
+  let parts
+  if (isComposedKind(type)) {
+    parts = COMPOSED_LAYOUTS[type]().map((part, i) => ({
+      id: `preview-${type}-${i}`,
+      ...part,
+      z: i + 1,
+      groupId: null,
+    }))
+  } else {
+    const d = DEFAULTS[type]
+    if (!d) return []
+    parts = [
+      {
+        id: `preview-${type}`,
+        type,
+        x: 0,
+        y: 0,
+        w: d.w,
+        h: d.h,
+        z: 1,
+        fill: d.fill,
+        stroke: d.stroke,
+        strokeWidth: d.strokeWidth,
+        opacity: d.opacity,
+        cornerRadius: d.cornerRadius ?? 0,
+        text: d.text,
+        fontSize: d.fontSize,
+        textAlign: d.textAlign || 'left',
+        verticalAlign: d.verticalAlign || 'top',
+        groupId: null,
+      },
+    ]
+  }
+
+  const bounds = getBounds(parts)
+  if (!bounds) return parts
+  // Light strokes/text for dark panel thumbnails.
+  return parts.map((el) => ({
+    ...el,
+    x: el.x - bounds.x,
+    y: el.y - bounds.y,
+    stroke: el.stroke && el.stroke !== 'transparent' ? '#ffffff' : el.stroke,
+    fill: el.type === 'text' ? '#ffffff' : el.fill,
+  }))
+}
+
 export function createElement(type, x, y, z, snapOn) {
   const defaults = DEFAULTS[type]
   const w = defaults.w
@@ -157,6 +218,7 @@ export function createElement(type, x, y, z, snapOn) {
     text: defaults.text,
     fontSize: defaults.fontSize,
     textAlign: defaults.textAlign || 'left',
+    verticalAlign: defaults.verticalAlign || 'top',
     groupId: null,
   }
 }
@@ -214,21 +276,22 @@ export function ungroup(elements, groupId) {
   )
 }
 
-export function scaleElementsToBounds(elements, ids, oldBounds, newBounds) {
+export function scaleElementsToBounds(elements, origins, oldBounds, newBounds) {
   if (!oldBounds || oldBounds.w < 1 || oldBounds.h < 1) return elements
   const sx = newBounds.w / oldBounds.w
   const sy = newBounds.h / oldBounds.h
-  const idSet = new Set(ids)
+  const originById = new Map(origins.map((el) => [el.id, el]))
   return elements.map((el) => {
-    if (!idSet.has(el.id)) return el
+    const origin = originById.get(el.id)
+    if (!origin) return el
     const next = {
       ...el,
-      x: newBounds.x + (el.x - oldBounds.x) * sx,
-      y: newBounds.y + (el.y - oldBounds.y) * sy,
-      w: Math.max(1, el.w * sx),
-      h: el.type === 'line' ? el.h * sy : Math.max(1, el.h * sy),
+      x: newBounds.x + (origin.x - oldBounds.x) * sx,
+      y: newBounds.y + (origin.y - oldBounds.y) * sy,
+      w: Math.max(1, origin.w * sx),
+      h: origin.type === 'line' ? origin.h * sy : Math.max(1, origin.h * sy),
     }
-    if (el.fontSize) next.fontSize = Math.max(8, el.fontSize * sy)
+    if (origin.fontSize) next.fontSize = Math.max(8, origin.fontSize * sy)
     return next
   })
 }

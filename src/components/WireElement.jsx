@@ -1,4 +1,8 @@
+import { DEFAULTS } from '../lib/constants'
+
 function ImagePlaceholder({ stroke, strokeWidth }) {
+  const s = stroke ?? DEFAULTS.image.stroke
+  const sw = strokeWidth ?? DEFAULTS.image.strokeWidth
   return (
     <svg className="el-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
       <rect
@@ -7,8 +11,8 @@ function ImagePlaceholder({ stroke, strokeWidth }) {
         width="98"
         height="98"
         fill="none"
-        stroke={stroke}
-        strokeWidth={strokeWidth}
+        stroke={s}
+        strokeWidth={sw}
         vectorEffect="non-scaling-stroke"
       />
       <line
@@ -16,8 +20,8 @@ function ImagePlaceholder({ stroke, strokeWidth }) {
         y1="1"
         x2="99"
         y2="99"
-        stroke={stroke}
-        strokeWidth={strokeWidth}
+        stroke={s}
+        strokeWidth={sw}
         vectorEffect="non-scaling-stroke"
       />
       <line
@@ -25,8 +29,8 @@ function ImagePlaceholder({ stroke, strokeWidth }) {
         y1="1"
         x2="1"
         y2="99"
-        stroke={stroke}
-        strokeWidth={strokeWidth}
+        stroke={s}
+        strokeWidth={sw}
         vectorEffect="non-scaling-stroke"
       />
     </svg>
@@ -62,7 +66,7 @@ export default function WireElement({ el, selected, onPointerDown, dimmed }) {
           opacity: dimmed ? Math.min(el.opacity ?? 1, 1) * 0.28 : el.opacity,
         }}
         data-id={el.id}
-        onPointerDown={(e) => onPointerDown(e, el.id)}
+        onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
       >
         <svg className="el-svg" width={boxW} height={boxH}>
           <line
@@ -79,12 +83,19 @@ export default function WireElement({ el, selected, onPointerDown, dimmed }) {
   }
 
   if (el.type === 'text') {
+    const vAlign = el.verticalAlign || 'top'
     return (
       <div
         className={`wire-el wire-el--text${selected ? ' is-selected' : ''}`}
-        style={style}
+        style={{
+          ...style,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent:
+            vAlign === 'middle' ? 'center' : vAlign === 'bottom' ? 'flex-end' : 'flex-start',
+        }}
         data-id={el.id}
-        onPointerDown={(e) => onPointerDown(e, el.id)}
+        onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
       >
         <span
           style={{
@@ -104,29 +115,36 @@ export default function WireElement({ el, selected, onPointerDown, dimmed }) {
   }
 
   if (el.type === 'circle') {
+    const sw = el.strokeWidth || 0
     return (
       <div
         className={`wire-el wire-el--circle${selected ? ' is-selected' : ''}`}
         style={{
           ...style,
           borderRadius: '50%',
-          border: `${el.strokeWidth}px solid ${el.stroke}`,
+          border: sw > 0 ? `${sw}px solid ${el.stroke}` : 'none',
           background: el.fill === 'transparent' ? 'transparent' : el.fill,
           boxSizing: 'border-box',
         }}
         data-id={el.id}
-        onPointerDown={(e) => onPointerDown(e, el.id)}
+        onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
       />
     )
   }
 
   if (el.type === 'image') {
+    const fill = el.fill ?? DEFAULTS.image.fill
     return (
       <div
         className={`wire-el wire-el--image${selected ? ' is-selected' : ''}`}
-        style={style}
+        style={{
+          ...style,
+          background: fill === 'transparent' ? 'transparent' : fill,
+          borderRadius: el.cornerRadius,
+          overflow: 'hidden',
+        }}
         data-id={el.id}
-        onPointerDown={(e) => onPointerDown(e, el.id)}
+        onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
       >
         <ImagePlaceholder stroke={el.stroke} strokeWidth={el.strokeWidth} />
       </div>
@@ -134,18 +152,19 @@ export default function WireElement({ el, selected, onPointerDown, dimmed }) {
   }
 
   // rect
+  const sw = el.strokeWidth || 0
   return (
     <div
       className={`wire-el wire-el--rect${selected ? ' is-selected' : ''}`}
       style={{
         ...style,
-        border: `${el.strokeWidth}px solid ${el.stroke}`,
+        border: sw > 0 ? `${sw}px solid ${el.stroke}` : 'none',
         background: el.fill === 'transparent' ? 'transparent' : el.fill,
         borderRadius: el.cornerRadius,
         boxSizing: 'border-box',
       }}
       data-id={el.id}
-      onPointerDown={(e) => onPointerDown(e, el.id)}
+      onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
     />
   )
 }

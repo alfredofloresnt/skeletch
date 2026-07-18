@@ -1,5 +1,83 @@
 import { sharedGroupId } from '../lib/elements'
 
+function AlignIcon({ align }) {
+  const lines =
+    align === 'right'
+      ? [
+          [4, 6, 16, 6],
+          [8, 10, 16, 10],
+          [4, 14, 16, 14],
+          [10, 18, 16, 18],
+        ]
+      : align === 'middle'
+        ? [
+            [4, 6, 16, 6],
+            [6, 10, 14, 10],
+            [4, 14, 16, 14],
+            [7, 18, 13, 18],
+          ]
+        : [
+            [4, 6, 16, 6],
+            [4, 10, 12, 10],
+            [4, 14, 16, 14],
+            [4, 18, 10, 18],
+          ]
+
+  return (
+    <svg viewBox="0 0 20 24" width="16" height="18" aria-hidden>
+      {lines.map(([x1, y1, x2, y2], i) => (
+        <line
+          key={i}
+          x1={x1}
+          y1={y1}
+          x2={x2}
+          y2={y2}
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      ))}
+    </svg>
+  )
+}
+
+function VAlignIcon({ align }) {
+  // top / middle / bottom — horizontal bars stacked in the box
+  const bars =
+    align === 'bottom'
+      ? [12, 16, 20]
+      : align === 'middle'
+        ? [8, 12, 16]
+        : [4, 8, 12]
+
+  return (
+    <svg viewBox="0 0 20 24" width="16" height="18" aria-hidden>
+      <rect
+        x="3"
+        y="2"
+        width="14"
+        height="20"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+        rx="1"
+      />
+      {bars.map((y) => (
+        <line
+          key={y}
+          x1="6"
+          y1={y}
+          x2="14"
+          y2={y}
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      ))}
+    </svg>
+  )
+}
+
 export default function Inspector({
   elements,
   selectedIds,
@@ -195,16 +273,41 @@ export default function Inspector({
             value={el.fontSize || 16}
             onChange={(e) => set({ fontSize: Number(e.target.value) })}
           />
-          <label className="field-label">Align</label>
-          <div className="btn-row">
-            {['left', 'middle', 'right'].map((align) => (
+          <label className="field-label">Horizontal</label>
+          <div className="btn-row btn-row--icons">
+            {[
+              ['left', 'Align left'],
+              ['middle', 'Align center'],
+              ['right', 'Align right'],
+            ].map(([align, label]) => (
               <button
                 key={align}
                 type="button"
-                className={`btn-ghost${(el.textAlign || 'left') === align ? ' is-active' : ''}`}
+                title={label}
+                aria-label={label}
+                className={`btn-ghost btn-icon${(el.textAlign || 'left') === align ? ' is-active' : ''}`}
                 onClick={() => set({ textAlign: align })}
               >
-                {align}
+                <AlignIcon align={align} />
+              </button>
+            ))}
+          </div>
+          <label className="field-label">Vertical</label>
+          <div className="btn-row btn-row--icons">
+            {[
+              ['top', 'Align top'],
+              ['middle', 'Align middle'],
+              ['bottom', 'Align bottom'],
+            ].map(([align, label]) => (
+              <button
+                key={align}
+                type="button"
+                title={label}
+                aria-label={label}
+                className={`btn-ghost btn-icon${(el.verticalAlign || 'top') === align ? ' is-active' : ''}`}
+                onClick={() => set({ verticalAlign: align })}
+              >
+                <VAlignIcon align={align} />
               </button>
             ))}
           </div>
