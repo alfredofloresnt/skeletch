@@ -43,6 +43,5 @@ npm run lint     # oxlint
 
 ## Deploy
 
-Pushes to `main` build and publish to GitHub Pages via Actions (`.github/workflows/deploy.yml`).
 
 Demo: https://alfredofloresnt.github.io/skeletch/
