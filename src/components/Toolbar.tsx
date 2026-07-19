@@ -41,7 +41,7 @@ export default function Toolbar({
     <header className="toolbar">
       <div className="toolbar-brand">
         <span className="brand-mark" aria-hidden />
-        <span className="brand-name">Wireframe</span>
+        <span className="brand-name">Skeletch</span>
       </div>
 
       <div className="toolbar-group">

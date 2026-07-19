@@ -1,4 +1,4 @@
-# Wireframe
+# Skeletch
 
 Low-fidelity wireframe editor built with React (no extra runtime dependencies).
 

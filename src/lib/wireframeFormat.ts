@@ -106,7 +106,7 @@ export function downloadWireframe(doc: WireframeDocument, filename?: string): vo
 function defaultFilename(doc: WireframeDocument): string {
   const { width, height } = doc.artboard
   const stamp = new Date().toISOString().slice(0, 10)
-  return `wireframe-${width}x${height}-${stamp}.wireframe`
+  return `skeletch-${width}x${height}-${stamp}.wireframe`
 }
 
 export function readWireframeFile(file: File): Promise<ReturnType<typeof parseWireframe>> {

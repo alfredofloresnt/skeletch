@@ -266,7 +266,7 @@ export async function exportArtboardPng(
   for (const el of sorted) paintShape(ctx, el)
 
   const link = document.createElement('a')
-  link.download = `wireframe-${artboard.width}x${artboard.height}.png`
+  link.download = `skeletch-${artboard.width}x${artboard.height}.png`
   link.href = canvas.toDataURL('image/png')
   link.click()
 }
