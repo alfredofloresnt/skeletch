@@ -2,12 +2,16 @@
 
 Low-fidelity wireframe editor built with React (no extra runtime dependencies).
 
+Live: https://alfredofloresnt.github.io/skeletch/
+
 ## Run
 
 ```bash
 npm install
 npm run dev
 ```
+
+Dev server: http://localhost:5173/skeletch/
 
 ## Features
 
