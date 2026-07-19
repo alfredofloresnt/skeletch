@@ -1,27 +1,48 @@
 # Skeletch
 
-Low-fidelity wireframe editor built with React (no extra runtime dependencies).
+A low-fidelity wireframe editor for sketching UI layouts in the browser. Built with React, TypeScript, and Vite — no extra runtime dependencies.
 
-Live: https://alfredofloresnt.github.io/skeletch/
+**[Open Skeletch →](https://alfredofloresnt.github.io/skeletch/)**
 
-## Run
+## Features
+
+- **Shapes & widgets** — rectangles, circles, triangles, lines, text, and image placeholders, plus composed UI: input, search, button, checkbox, switch, slider, dropdown, card, slideshow, and grid
+- **Canvas** — freeform pan/zoom artboard with 8px grid snap, multi-select, and frame presets (Phone / Tablet / Desktop) or custom size
+- **Groups & layers** — group elements, double-click to edit inside a group, reorder in the Layers tab, and control depth in the inspector
+- **Inspector** — position, size, text, stroke, fill, opacity, corner radius, and layer depth
+- **Portable files** — save and open `.wireframe` JSON documents; export the artboard as PNG
+
+## Shortcuts
+
+| Action | Keys |
+| --- | --- |
+| Pan | Space + drag, or middle-mouse drag |
+| Zoom | Scroll |
+| Multi-select | ⌘/Ctrl + click, or marquee |
+| Undo | ⌘/Ctrl + Z |
+| Copy / Paste | ⌘/Ctrl + C / V |
+| Group / Ungroup | ⌘/Ctrl + G / ⌘/Ctrl + Shift + G |
+| Nudge | Arrow keys (Shift for 8px) |
+| Delete | Delete / Backspace |
+| Clear selection | Esc |
+
+## Develop
 
 ```bash
 npm install
 npm run dev
 ```
 
-Dev server: http://localhost:5173/skeletch/
+App: [http://localhost:5173/skeletch/](http://localhost:5173/skeletch/)
 
-## Features
+```bash
+npm run build    # production build → dist/
+npm run preview  # preview the production build
+npm run lint     # oxlint
+```
 
-- Drag or click-place atomic shapes: rectangle, circle, line, text, image placeholder
-- Composed widgets (Input, Button, Checkbox, Dropdown, Card, Grid) built from atoms and grouped
-- Double-click a group to edit atoms; Ungroup in the inspector
-- Freeform canvas: scroll to zoom, Space+drag (or middle-mouse) to pan
-- Grid snap (8px), multi-select (⌘/Ctrl+click or marquee)
-- Layers tab with drag reorder; layer depth in the inspector
-- Frame presets (Phone / Tablet / Desktop) plus custom size
-- Save / Open portable `.wireframe` files (JSON) across devices
-- Export artboard as PNG
-- Full inspector: position, size, text, stroke, fill, opacity, corner radius, layer depth
+## Deploy
+
+Pushes to `main` build and publish to GitHub Pages via Actions (`.github/workflows/deploy.yml`).
+
+Demo: https://alfredofloresnt.github.io/skeletch/
