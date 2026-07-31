@@ -729,8 +729,43 @@ textarea {
 }
 
 .canvas-world {
+  position: relative;
   transform-origin: 0 0;
   will-change: transform;
+}
+
+.artboard-frame {
+  position: absolute;
+  pointer-events: none;
+}
+
+.artboard-label {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  margin-bottom: 6px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+  cursor: grab;
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+.artboard-label.is-active {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.artboard-label-size {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.65rem;
 }
 
 .artboard {
@@ -740,6 +775,23 @@ textarea {
     0 0 0 1px rgba(0, 0, 0, 0.2),
     0 24px 60px rgba(0, 0, 0, 0.45);
   overflow: hidden;
+  pointer-events: auto;
+}
+
+.artboard.is-active {
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.35),
+    0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.artboard.is-artboard-selected {
+  box-shadow:
+    0 0 0 2px rgba(90, 160, 255, 0.85),
+    0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.artboard.is-dragging-elements {
+  overflow: visible;
 }
 
 .canvas-hint {

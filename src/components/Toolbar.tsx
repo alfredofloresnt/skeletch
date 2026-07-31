@@ -4,13 +4,16 @@ import type { Artboard } from '../lib/types'
 
 type ToolbarProps = {
   artboard: Artboard
-  presetId: string
   zoom: number
   snapOn: boolean
+  canDeleteArtboard: boolean
   onPreset: (id: string) => void
-  onSizeChange: (patch: Partial<Artboard>) => void
+  onSizeChange: (patch: Partial<Pick<Artboard, 'width' | 'height'>>) => void
   onZoomChange: (zoom: number) => void
   onToggleSnap: () => void
+  onAddArtboard: () => void
+  onDuplicateArtboard: () => void
+  onDeleteArtboard: () => void
   onExport: () => void
   onFit: () => void
   onSave: () => void
@@ -21,13 +24,16 @@ type ToolbarProps = {
 
 export default function Toolbar({
   artboard,
-  presetId,
   zoom,
   snapOn,
+  canDeleteArtboard,
   onPreset,
   onSizeChange,
   onZoomChange,
   onToggleSnap,
+  onAddArtboard,
+  onDuplicateArtboard,
+  onDeleteArtboard,
   onExport,
   onFit,
   onSave,
@@ -48,7 +54,7 @@ export default function Toolbar({
         <label className="field-label">Frame</label>
         <select
           className="toolbar-select"
-          value={presetId}
+          value={artboard.presetId}
           onChange={(e) => onPreset(e.target.value)}
         >
           {FRAME_PRESETS.map((p) => (
@@ -77,6 +83,26 @@ export default function Toolbar({
           onChange={(e) => onSizeChange({ height: Number(e.target.value) || 100 })}
           aria-label="Artboard height"
         />
+        <button type="button" className="btn-ghost" onClick={onAddArtboard} title="Add artboard">
+          + Board
+        </button>
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={onDuplicateArtboard}
+          title="Duplicate artboard"
+        >
+          Duplicate
+        </button>
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={onDeleteArtboard}
+          disabled={!canDeleteArtboard}
+          title="Delete artboard"
+        >
+          Delete board
+        </button>
       </div>
 
       <div className="toolbar-group">

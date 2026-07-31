@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Canvas from './components/Canvas'
 import Inspector from './components/Inspector'
 import SidePanel from './components/SidePanel'
 import Toolbar from './components/Toolbar'
+import {
+  createArtboard,
+  defaultArtboard,
+  elementsOnArtboard,
+  nextArtboardPosition,
+  worldToLocal,
+} from './lib/artboards'
 import {
   bringForward,
   bringToFront,
@@ -13,6 +20,7 @@ import {
   expandSelectionForGroups,
   groupElements,
   isComposedKind,
+  mapArtboardElements,
   nextZ,
   renameGroup,
   reorderGroupChildren,
@@ -34,28 +42,27 @@ import {
 } from './lib/wireframeFormat'
 import './App.css'
 
-const DEFAULT_PRESET = FRAME_PRESETS.find((p) => p.id === 'desktop') ?? FRAME_PRESETS[0]
 const HISTORY_LIMIT = 100
 
 type HistorySnapshot = {
-  artboard: Artboard
-  presetId: string
+  artboards: Artboard[]
+  activeArtboardId: string
   snapOn: boolean
   elements: WireElement[]
   selectedIds: string[]
   editingGroupId: string | null
+  artboardSelected: boolean
 }
 
 type PaletteDrag = { type: PlaceType; x: number; y: number }
 
 export default function App() {
-  const [artboard, setArtboard] = useState<Artboard>({
-    width: DEFAULT_PRESET.width,
-    height: DEFAULT_PRESET.height,
-  })
-  const [presetId, setPresetId] = useState<string>(DEFAULT_PRESET.id)
+  const initialBoard = useMemo(() => defaultArtboard(), [])
+  const [artboards, setArtboards] = useState<Artboard[]>([initialBoard])
+  const [activeArtboardId, setActiveArtboardId] = useState(initialBoard.id)
   const [elements, setElements] = useState<WireElement[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [artboardSelected, setArtboardSelected] = useState(false)
   const [snapOn, setSnapOn] = useState(true)
   const [placeType, setPlaceType] = useState<PlaceType | null>(null)
   const [sideTab, setSideTab] = useState<'elements' | 'layers'>('elements')
@@ -71,13 +78,18 @@ export default function App() {
   const documentRef = useRef<HistorySnapshot | null>(null)
   const [canUndo, setCanUndo] = useState(false)
 
+  const activeArtboard =
+    artboards.find((ab) => ab.id === activeArtboardId) || artboards[0] || initialBoard
+  const activeElements = elementsOnArtboard(elements, activeArtboard.id)
+
   documentRef.current = {
-    artboard,
-    presetId,
+    artboards,
+    activeArtboardId,
     snapOn,
     elements,
     selectedIds,
     editingGroupId,
+    artboardSelected,
   }
 
   const recordHistory = useCallback(() => {
@@ -85,7 +97,7 @@ export default function App() {
     if (!current) return
     historyRef.current.push({
       ...current,
-      artboard: { ...current.artboard },
+      artboards: current.artboards.map((ab) => ({ ...ab })),
       elements: current.elements.map((el) => ({ ...el })),
       selectedIds: [...current.selectedIds],
     })
@@ -96,32 +108,39 @@ export default function App() {
   const undo = useCallback(() => {
     const previous = historyRef.current.pop()
     if (!previous) return
-    setArtboard(previous.artboard)
-    setPresetId(previous.presetId)
+    setArtboards(previous.artboards)
+    setActiveArtboardId(previous.activeArtboardId)
     setSnapOn(previous.snapOn)
     setElements(previous.elements)
     setSelectedIds(previous.selectedIds)
     setEditingGroupId(previous.editingGroupId)
+    setArtboardSelected(previous.artboardSelected)
     setPlaceType(null)
     setCanUndo(historyRef.current.length > 0)
   }, [])
 
-  const updateElement = useCallback((id: string, patch: Partial<WireElement>) => {
-    recordHistory()
-    setElements((prev) => prev.map((el) => (el.id === id ? { ...el, ...patch } : el)))
-  }, [recordHistory])
+  const updateElement = useCallback(
+    (id: string, patch: Partial<WireElement>) => {
+      recordHistory()
+      setElements((prev) => prev.map((el) => (el.id === id ? { ...el, ...patch } : el)))
+    },
+    [recordHistory],
+  )
 
   const place = useCallback(
-    (type: PlaceType, x: number, y: number) => {
+    (type: PlaceType, x: number, y: number, artboardId: string) => {
       recordHistory()
+      setActiveArtboardId(artboardId)
+      setArtboardSelected(false)
       setElements((prev) => {
+        const boardEls = prev.filter((el) => el.artboardId === artboardId)
         if (isComposedKind(type)) {
-          const created = createComposed(type, x, y, nextZ(prev), snapOn)
+          const created = createComposed(type, x, y, nextZ(boardEls), snapOn, artboardId)
           setSelectedIds(created.map((el) => el.id))
           setEditingGroupId(null)
           return [...prev, ...created]
         }
-        const el = createElement(type, x, y, nextZ(prev), snapOn)
+        const el = createElement(type, x, y, nextZ(boardEls), snapOn, artboardId)
         setSelectedIds([el.id])
         return [...prev, el]
       })
@@ -169,9 +188,33 @@ export default function App() {
           return
         }
 
-        const x = (e.clientX - rect.left - pan.x) / zoom
-        const y = (e.clientY - rect.top - pan.y) / zoom
-        place(drag.type, x, y)
+        const worldX = (e.clientX - rect.left - pan.x) / zoom
+        const worldY = (e.clientY - rect.top - pan.y) / zoom
+        const boards = documentRef.current?.artboards || []
+        const activeId = documentRef.current?.activeArtboardId || activeArtboardId
+        let target =
+          boards.find(
+            (ab) =>
+              worldX >= ab.x &&
+              worldX <= ab.x + ab.width &&
+              worldY >= ab.y &&
+              worldY <= ab.y + ab.height &&
+              ab.id === activeId,
+          ) ||
+          [...boards]
+            .reverse()
+            .find(
+              (ab) =>
+                worldX >= ab.x &&
+                worldX <= ab.x + ab.width &&
+                worldY >= ab.y &&
+                worldY <= ab.y + ab.height,
+            ) ||
+          boards.find((ab) => ab.id === activeId) ||
+          boards[0]
+        if (!target) return
+        const local = worldToLocal(target, { x: worldX, y: worldY })
+        place(drag.type, local.x, local.y, target.id)
         setPlaceType(null)
         window.getSelection()?.removeAllRanges()
       }
@@ -180,22 +223,94 @@ export default function App() {
       window.addEventListener('pointerup', onUp)
       window.addEventListener('pointercancel', onUp)
     },
-    [pan.x, pan.y, zoom, place],
+    [pan.x, pan.y, zoom, place, activeArtboardId],
   )
 
   const onPreset = (id: string) => {
     recordHistory()
-    setPresetId(id)
     const preset = FRAME_PRESETS.find((p) => p.id === id)
-    if (preset) {
-      setArtboard({ width: preset.width, height: preset.height })
-    }
+    setArtboards((prev) =>
+      prev.map((ab) =>
+        ab.id === activeArtboardId
+          ? {
+              ...ab,
+              presetId: id,
+              ...(preset
+                ? { width: preset.width, height: preset.height, name: preset.label }
+                : {}),
+            }
+          : ab,
+      ),
+    )
   }
 
-  const onSizeChange = (patch: Partial<Artboard>) => {
+  const onSizeChange = (patch: Partial<Pick<Artboard, 'width' | 'height'>>) => {
     recordHistory()
-    setPresetId('custom')
-    setArtboard((prev) => ({ ...prev, ...patch }))
+    setArtboards((prev) =>
+      prev.map((ab) =>
+        ab.id === activeArtboardId ? { ...ab, ...patch, presetId: 'custom' } : ab,
+      ),
+    )
+  }
+
+  const addArtboard = () => {
+    recordHistory()
+    const pos = nextArtboardPosition(artboards)
+    const source = activeArtboard
+    const next = createArtboard({
+      width: source.width,
+      height: source.height,
+      presetId: source.presetId,
+      name: source.presetId === 'custom' ? `Artboard ${artboards.length + 1}` : source.name,
+      x: pos.x,
+      y: pos.y,
+    })
+    setArtboards((prev) => [...prev, next])
+    setActiveArtboardId(next.id)
+    setSelectedIds([])
+    setArtboardSelected(true)
+    setEditingGroupId(null)
+  }
+
+  const duplicateArtboard = () => {
+    recordHistory()
+    const source = activeArtboard
+    const pos = nextArtboardPosition(artboards)
+    const next = createArtboard({
+      width: source.width,
+      height: source.height,
+      presetId: source.presetId,
+      name: `${source.name} copy`,
+      x: pos.x,
+      y: pos.y,
+    })
+    const boardEls = elementsOnArtboard(elements, source.id)
+    const { elements: copies } = duplicateElements(
+      boardEls,
+      boardEls.map((el) => el.id),
+      0,
+      0,
+    )
+    const created = copies.map((el) => ({ ...el, artboardId: next.id }))
+    setArtboards((prev) => [...prev, next])
+    setElements((prev) => [...prev, ...created])
+    setActiveArtboardId(next.id)
+    setSelectedIds([])
+    setArtboardSelected(true)
+    setEditingGroupId(null)
+  }
+
+  const deleteArtboard = () => {
+    if (artboards.length <= 1) return
+    recordHistory()
+    const remaining = artboards.filter((ab) => ab.id !== activeArtboardId)
+    const nextActive = remaining[remaining.length - 1]
+    setArtboards(remaining)
+    setElements((prev) => prev.filter((el) => el.artboardId !== activeArtboardId))
+    setActiveArtboardId(nextActive.id)
+    setSelectedIds([])
+    setArtboardSelected(true)
+    setEditingGroupId(null)
   }
 
   const onZoomChange = (z: number) => setZoom(clamp(z, MIN_ZOOM, MAX_ZOOM))
@@ -214,29 +329,31 @@ export default function App() {
     const wrap = stageWrapRef.current
     if (!wrap) return
     const pad = 80
-    const zw = (wrap.clientWidth - pad) / artboard.width
-    const zh = (wrap.clientHeight - pad) / artboard.height
+    const ab = activeArtboard
+    const zw = (wrap.clientWidth - pad) / ab.width
+    const zh = (wrap.clientHeight - pad) / ab.height
     const next = clamp(Math.min(zw, zh), MIN_ZOOM, MAX_ZOOM)
     setZoom(next)
     setPan({
-      x: (wrap.clientWidth - artboard.width * next) / 2,
-      y: (wrap.clientHeight - artboard.height * next) / 2,
+      x: (wrap.clientWidth - ab.width * next) / 2 - ab.x * next,
+      y: (wrap.clientHeight - ab.height * next) / 2 - ab.y * next,
     })
   }
 
   useEffect(() => {
     const wrap = stageWrapRef.current
     if (!wrap) return
+    const ab = initialBoard
     const pad = 80
-    const zw = (wrap.clientWidth - pad) / DEFAULT_PRESET.width
-    const zh = (wrap.clientHeight - pad) / DEFAULT_PRESET.height
+    const zw = (wrap.clientWidth - pad) / ab.width
+    const zh = (wrap.clientHeight - pad) / ab.height
     const next = clamp(Math.min(zw, zh), MIN_ZOOM, MAX_ZOOM)
     setZoom(next)
     setPan({
-      x: (wrap.clientWidth - DEFAULT_PRESET.width * next) / 2,
-      y: (wrap.clientHeight - DEFAULT_PRESET.height * next) / 2,
+      x: (wrap.clientWidth - ab.width * next) / 2,
+      y: (wrap.clientHeight - ab.height * next) / 2,
     })
-  }, [])
+  }, [initialBoard])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -272,7 +389,23 @@ export default function App() {
           return
         }
         setSelectedIds([])
+        setArtboardSelected(false)
         setPlaceType(null)
+        return
+      }
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && artboardSelected && !selectedIds.length) {
+        if (artboards.length <= 1) return
+        e.preventDefault()
+        recordHistory()
+        const remaining = artboards.filter((ab) => ab.id !== activeArtboardId)
+        const nextActive = remaining[remaining.length - 1]
+        setArtboards(remaining)
+        setElements((prev) => prev.filter((el) => el.artboardId !== activeArtboardId))
+        setActiveArtboardId(nextActive.id)
+        setSelectedIds([])
+        setArtboardSelected(true)
+        setEditingGroupId(null)
         return
       }
 
@@ -298,11 +431,16 @@ export default function App() {
         recordHistory()
         const clipIds = clipboardRef.current.map((el) => el.id)
         const { elements: copies, ids } = duplicateElements(clipboardRef.current, clipIds, 16, 16)
-        // Rebase z on top of current document
-        const z0 = nextZ(elements)
-        const created = copies.map((el, i) => ({ ...el, z: z0 + i }))
+        const boardEls = elementsOnArtboard(elements, activeArtboardId)
+        const z0 = nextZ(boardEls)
+        const created = copies.map((el, i) => ({
+          ...el,
+          z: z0 + i,
+          artboardId: activeArtboardId,
+        }))
         setElements((prev) => [...prev, ...created])
         setSelectedIds(ids)
+        setArtboardSelected(false)
         setEditingGroupId(null)
         clipboardRef.current = created.map((el) => ({ ...el }))
         return
@@ -323,7 +461,16 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedIds, editingGroupId, elements, recordHistory, undo])
+  }, [
+    selectedIds,
+    editingGroupId,
+    elements,
+    recordHistory,
+    undo,
+    artboardSelected,
+    artboards,
+    activeArtboardId,
+  ])
 
   const handleUngroup = (groupId: string) => {
     recordHistory()
@@ -332,6 +479,12 @@ export default function App() {
   }
 
   const handleGroup = (ids: string[] = selectedIds) => {
+    const boardIds = new Set(
+      ids
+        .map((id) => elements.find((el) => el.id === id)?.artboardId)
+        .filter(Boolean),
+    )
+    if (boardIds.size !== 1) return
     if (!canGroup(elements, ids)) return
     recordHistory()
     const next = groupElements(elements, ids)
@@ -346,7 +499,12 @@ export default function App() {
   }
 
   const handleSave = () => {
-    const doc = serializeWireframe({ artboard, presetId, snapOn, elements })
+    const doc = serializeWireframe({
+      artboards,
+      activeArtboardId,
+      snapOn,
+      elements,
+    })
     downloadWireframe(doc)
   }
 
@@ -354,11 +512,12 @@ export default function App() {
     try {
       const doc = await readWireframeFile(file)
       recordHistory()
-      setArtboard(doc.artboard)
-      setPresetId(doc.presetId)
+      setArtboards(doc.artboards)
+      setActiveArtboardId(doc.activeArtboardId)
       setSnapOn(doc.snapOn)
       setElements(doc.elements)
       setSelectedIds([])
+      setArtboardSelected(false)
       setEditingGroupId(null)
       setPlaceType(null)
     } catch (err) {
@@ -367,13 +526,19 @@ export default function App() {
     }
   }
 
+  const scopeZ = (fn: (scoped: WireElement[]) => WireElement[]) => {
+    const boardId =
+      elements.find((el) => selectedIds.includes(el.id))?.artboardId || activeArtboardId
+    setElements((prev) => mapArtboardElements(prev, boardId, fn))
+  }
+
   return (
     <div className="app-shell">
       <Toolbar
-        artboard={artboard}
-        presetId={presetId}
+        artboard={activeArtboard}
         zoom={zoom}
         snapOn={snapOn}
+        canDeleteArtboard={artboards.length > 1}
         onPreset={onPreset}
         onSizeChange={onSizeChange}
         onZoomChange={onZoomChange}
@@ -381,7 +546,10 @@ export default function App() {
           recordHistory()
           setSnapOn((s) => !s)
         }}
-        onExport={() => exportArtboardPng(artboard, elements)}
+        onAddArtboard={addArtboard}
+        onDuplicateArtboard={duplicateArtboard}
+        onDeleteArtboard={deleteArtboard}
+        onExport={() => exportArtboardPng(activeArtboard, activeElements)}
         onFit={fitArtboard}
         onSave={handleSave}
         onOpen={handleOpen}
@@ -396,16 +564,27 @@ export default function App() {
           placeType={placeType}
           onPlaceType={setPlaceType}
           onPaletteDragStart={startPaletteDrag}
-          elements={elements}
+          elements={activeElements}
           selectedIds={selectedIds}
-          onSelect={setSelectedIds}
+          onSelect={(ids) => {
+            setSelectedIds(ids)
+            setArtboardSelected(false)
+          }}
           onReorderTree={(keys) => {
             recordHistory()
-            setElements((prev) => reorderLayerTree(prev, keys))
+            setElements((prev) =>
+              mapArtboardElements(prev, activeArtboardId, (scoped) =>
+                reorderLayerTree(scoped, keys),
+              ),
+            )
           }}
           onReorderGroupChildren={(groupId, childIds) => {
             recordHistory()
-            setElements((prev) => reorderGroupChildren(prev, groupId, childIds))
+            setElements((prev) =>
+              mapArtboardElements(prev, activeArtboardId, (scoped) =>
+                reorderGroupChildren(scoped, groupId, childIds),
+              ),
+            )
           }}
           dragId={dragLayerId}
           onDragId={setDragLayerId}
@@ -419,17 +598,28 @@ export default function App() {
 
         <div className="stage-wrap" ref={stageWrapRef}>
           <Canvas
-            artboard={artboard}
+            artboards={artboards}
+            activeArtboardId={activeArtboardId}
             elements={elements}
             selectedIds={selectedIds}
+            artboardSelected={artboardSelected}
             snapOn={snapOn}
             placeType={placeType}
             onSelect={setSelectedIds}
+            onActiveArtboard={setActiveArtboardId}
+            onArtboardSelected={setArtboardSelected}
             onMoveElements={(updates) => {
               const map = Object.fromEntries(updates.map((u) => [u.id, u]))
               setElements((prev) =>
-                prev.map((el) => (map[el.id] ? { ...el, x: map[el.id].x, y: map[el.id].y } : el)),
+                prev.map((el) => {
+                  const u = map[el.id]
+                  if (!u) return el
+                  return { ...el, x: u.x, y: u.y, artboardId: u.artboardId }
+                }),
               )
+            }}
+            onMoveArtboard={(id, x, y) => {
+              setArtboards((prev) => prev.map((ab) => (ab.id === id ? { ...ab, x, y } : ab)))
             }}
             onResizeElement={(id, box) => {
               setElements((prev) => prev.map((el) => (el.id === id ? { ...el, ...box } : el)))
@@ -466,19 +656,19 @@ export default function App() {
           onUpdate={updateElement}
           onBringForward={() => {
             recordHistory()
-            setElements((prev) => bringForward(prev, selectedIds))
+            scopeZ((scoped) => bringForward(scoped, selectedIds))
           }}
           onSendBackward={() => {
             recordHistory()
-            setElements((prev) => sendBackward(prev, selectedIds))
+            scopeZ((scoped) => sendBackward(scoped, selectedIds))
           }}
           onBringToFront={() => {
             recordHistory()
-            setElements((prev) => bringToFront(prev, selectedIds))
+            scopeZ((scoped) => bringToFront(scoped, selectedIds))
           }}
           onSendToBack={() => {
             recordHistory()
-            setElements((prev) => sendToBack(prev, selectedIds))
+            scopeZ((scoped) => sendToBack(scoped, selectedIds))
           }}
           onDelete={() => {
             recordHistory()

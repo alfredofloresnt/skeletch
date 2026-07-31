@@ -7,10 +7,10 @@ A low-fidelity wireframe editor for sketching UI layouts in the browser. Built w
 ## Features
 
 - **Shapes & widgets** — rectangles, circles, triangles, lines, text, and image placeholders, plus composed UI: input, search, button, checkbox, switch, slider, dropdown, card, slideshow, and grid
-- **Canvas** — freeform pan/zoom artboard with 8px grid snap, multi-select, and frame presets (Phone / Tablet / Desktop) or custom size
-- **Groups & layers** — group elements, double-click to edit inside a group, reorder in the Layers tab, and control depth in the inspector
+- **Multi-artboard canvas** — place multiple boards (Phone / Tablet / Desktop / custom sizes) on one infinite stage; drag elements between boards
+- **Groups & layers** — group elements, double-click to edit inside a group, reorder layers for the active board, and control depth in the inspector
 - **Inspector** — position, size, text, stroke, fill, opacity, corner radius, and layer depth
-- **Portable files** — save and open `.wireframe` JSON documents; export the artboard as PNG
+- **Portable files** — save and open `.wireframe` JSON documents (v2 multi-artboard; v1 files migrate); export the active artboard as PNG
 
 ## Shortcuts
 
@@ -23,7 +23,7 @@ A low-fidelity wireframe editor for sketching UI layouts in the browser. Built w
 | Copy / Paste | ⌘/Ctrl + C / V |
 | Group / Ungroup | ⌘/Ctrl + G / ⌘/Ctrl + Shift + G |
 | Nudge | Arrow keys (Shift for 8px) |
-| Delete | Delete / Backspace |
+| Delete | Delete / Backspace (elements, or selected artboard) |
 | Clear selection | Esc |
 
 ## Develop

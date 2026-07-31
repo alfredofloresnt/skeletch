@@ -218,6 +218,7 @@ export function getPalettePreview(type: PlaceType): WireElement[] {
       id: `preview-${type}-${i}`,
       ...part,
       z: i + 1,
+      artboardId: 'preview',
       groupId: null,
     }))
   } else {
@@ -232,6 +233,7 @@ export function getPalettePreview(type: PlaceType): WireElement[] {
         w: d.w,
         h: d.h,
         z: 1,
+        artboardId: 'preview',
         fill: d.fill,
         stroke: d.stroke,
         strokeWidth: d.strokeWidth,
@@ -264,6 +266,7 @@ export function createElement(
   y: number,
   z: number,
   snapOn: boolean,
+  artboardId: string,
 ): WireElement {
   const defaults = DEFAULTS[type]
   const w = defaults.w
@@ -277,6 +280,7 @@ export function createElement(
     w,
     h,
     z,
+    artboardId,
     fill: defaults.fill,
     stroke: defaults.stroke,
     strokeWidth: defaults.strokeWidth,
@@ -297,6 +301,7 @@ export function createComposed(
   cy: number,
   startZ: number,
   snapOn: boolean,
+  artboardId: string,
 ): WireElement[] {
   const layout = COMPOSED_LAYOUTS[kind]
   if (!layout) return []
@@ -316,10 +321,22 @@ export function createComposed(
     x: ox + part.x,
     y: oy + part.y,
     z: startZ + i,
+    artboardId,
     groupId,
     groupName,
     groupKind: kind,
   }))
+}
+
+/** Run a transform on one artboard's elements; leave others untouched. */
+export function mapArtboardElements(
+  elements: WireElement[],
+  artboardId: string,
+  fn: (scoped: WireElement[]) => WireElement[],
+): WireElement[] {
+  const scoped = elements.filter((el) => el.artboardId === artboardId)
+  const others = elements.filter((el) => el.artboardId !== artboardId)
+  return [...others, ...fn(scoped)]
 }
 
 export function nextZ(elements: WireElement[]): number {

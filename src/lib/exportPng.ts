@@ -265,8 +265,12 @@ export async function exportArtboardPng(
   const sorted = [...elements].sort((a, b) => a.z - b.z)
   for (const el of sorted) paintShape(ctx, el)
 
+  const slug = (artboard.name || 'artboard')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
   const link = document.createElement('a')
-  link.download = `skeletch-${artboard.width}x${artboard.height}.png`
+  link.download = `skeletch-${slug || 'artboard'}-${artboard.width}x${artboard.height}.png`
   link.href = canvas.toDataURL('image/png')
   link.click()
 }

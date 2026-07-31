@@ -38,8 +38,13 @@ export interface Rect {
 }
 
 export interface Artboard {
+  id: string
+  name: string
+  x: number
+  y: number
   width: number
   height: number
+  presetId: string
 }
 
 /** Partial layout atom before ids / z are assigned. */
@@ -64,6 +69,7 @@ export interface LayoutPart {
 export interface WireElement extends LayoutPart {
   id: string
   z: number
+  artboardId: string
   name?: string
   groupId?: string | null
   groupName?: string
@@ -89,8 +95,8 @@ export interface WireframeDocument {
   format: 'wireframe'
   version: number
   savedAt?: string
-  artboard: Artboard
-  presetId: string
+  artboards: Artboard[]
+  activeArtboardId: string
   snapOn: boolean
   elements: WireElement[]
 }

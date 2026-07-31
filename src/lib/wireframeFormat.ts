@@ -1,28 +1,23 @@
+import { createArtboard } from './artboards'
 import type { Artboard, TextAlign, VerticalAlign, WireElement, WireframeDocument } from './types'
 
-export const WIREFRAME_VERSION = 1
+export const WIREFRAME_VERSION = 2
 export const WIREFRAME_MIME = 'application/x-wireframe+json'
 
 /**
  * Portable document format (.wireframe)
- * {
- *   format: "wireframe",
- *   version: 1,
- *   artboard: { width, height },
- *   presetId?: string,
- *   snapOn?: boolean,
- *   elements: Element[]
- * }
+ * v2: artboards[] + activeArtboardId + elements with artboardId
+ * v1: singular artboard + presetId (migrated on parse)
  */
 
 export function serializeWireframe({
-  artboard,
-  presetId,
+  artboards,
+  activeArtboardId,
   snapOn,
   elements,
 }: {
-  artboard: Artboard
-  presetId: string
+  artboards: Artboard[]
+  activeArtboardId: string
   snapOn: boolean
   elements: WireElement[]
 }): WireframeDocument {
@@ -30,17 +25,26 @@ export function serializeWireframe({
     format: 'wireframe',
     version: WIREFRAME_VERSION,
     savedAt: new Date().toISOString(),
-    artboard: {
-      width: Number(artboard.width),
-      height: Number(artboard.height),
-    },
-    presetId: presetId || 'custom',
+    artboards: artboards.map(sanitizeArtboard),
+    activeArtboardId,
     snapOn: Boolean(snapOn),
-    elements: elements.map(sanitizeElement),
+    elements: elements.map((el) => sanitizeElement(el)),
   }
 }
 
-function sanitizeElement(el: WireElement): WireElement {
+function sanitizeArtboard(ab: Artboard): Artboard {
+  return {
+    id: ab.id,
+    name: ab.name || 'Artboard',
+    x: Number(ab.x) || 0,
+    y: Number(ab.y) || 0,
+    width: Number(ab.width),
+    height: Number(ab.height),
+    presetId: ab.presetId || 'custom',
+  }
+}
+
+function sanitizeElement(el: WireElement, fallbackArtboardId?: string): WireElement {
   return {
     id: el.id,
     type: el.type,
@@ -50,6 +54,7 @@ function sanitizeElement(el: WireElement): WireElement {
     w: el.w,
     h: el.h,
     z: el.z,
+    artboardId: el.artboardId || fallbackArtboardId || '',
     fill: el.fill,
     stroke: el.stroke,
     strokeWidth: el.strokeWidth,
@@ -65,8 +70,10 @@ function sanitizeElement(el: WireElement): WireElement {
   }
 }
 
-export function parseWireframe(raw: string | unknown): Omit<WireframeDocument, 'format' | 'version' | 'savedAt'> {
-  const data = (typeof raw === 'string' ? JSON.parse(raw) : raw) as Partial<WireframeDocument>
+type ParsedDoc = Omit<WireframeDocument, 'format' | 'version' | 'savedAt'>
+
+export function parseWireframe(raw: string | unknown): ParsedDoc {
+  const data = (typeof raw === 'string' ? JSON.parse(raw) : raw) as Record<string, unknown>
 
   if (!data || data.format !== 'wireframe') {
     throw new Error('Not a valid .wireframe file')
@@ -74,21 +81,52 @@ export function parseWireframe(raw: string | unknown): Omit<WireframeDocument, '
   if (typeof data.version !== 'number' || data.version > WIREFRAME_VERSION) {
     throw new Error(`Unsupported .wireframe version: ${data.version}`)
   }
-  if (!data.artboard?.width || !data.artboard?.height) {
-    throw new Error('Missing artboard size')
-  }
   if (!Array.isArray(data.elements)) {
     throw new Error('Missing elements array')
   }
 
+  if (data.version >= 2 && Array.isArray(data.artboards) && data.artboards.length) {
+    const artboards = (data.artboards as Artboard[]).map(sanitizeArtboard)
+    const activeArtboardId =
+      typeof data.activeArtboardId === 'string' &&
+      artboards.some((ab) => ab.id === data.activeArtboardId)
+        ? data.activeArtboardId
+        : artboards[0].id
+    const fallback = artboards[0].id
+    return {
+      artboards,
+      activeArtboardId,
+      snapOn: data.snapOn !== false,
+      elements: (data.elements as WireElement[]).map((el) => {
+        const next = sanitizeElement(el, fallback)
+        if (!artboards.some((ab) => ab.id === next.artboardId)) {
+          next.artboardId = fallback
+        }
+        return next
+      }),
+    }
+  }
+
+  // v1 migrate: singular artboard + presetId
+  const legacy = data.artboard as { width?: number; height?: number } | undefined
+  if (!legacy?.width || !legacy?.height) {
+    throw new Error('Missing artboard size')
+  }
+  const presetId = typeof data.presetId === 'string' ? data.presetId : 'custom'
+  const artboard = createArtboard({
+    width: Number(legacy.width),
+    height: Number(legacy.height),
+    presetId,
+    x: 0,
+    y: 0,
+  })
   return {
-    artboard: {
-      width: Number(data.artboard.width),
-      height: Number(data.artboard.height),
-    },
-    presetId: data.presetId || 'custom',
+    artboards: [artboard],
+    activeArtboardId: artboard.id,
     snapOn: data.snapOn !== false,
-    elements: data.elements.map(sanitizeElement),
+    elements: (data.elements as WireElement[]).map((el) =>
+      sanitizeElement(el, artboard.id),
+    ),
   }
 }
 
@@ -104,12 +142,14 @@ export function downloadWireframe(doc: WireframeDocument, filename?: string): vo
 }
 
 function defaultFilename(doc: WireframeDocument): string {
-  const { width, height } = doc.artboard
+  const active =
+    doc.artboards.find((ab) => ab.id === doc.activeArtboardId) || doc.artboards[0]
   const stamp = new Date().toISOString().slice(0, 10)
-  return `skeletch-${width}x${height}-${stamp}.wireframe`
+  if (!active) return `skeletch-${stamp}.wireframe`
+  return `skeletch-${active.width}x${active.height}-${stamp}.wireframe`
 }
 
-export function readWireframeFile(file: File): Promise<ReturnType<typeof parseWireframe>> {
+export function readWireframeFile(file: File): Promise<ParsedDoc> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => {
