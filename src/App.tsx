@@ -47,7 +47,12 @@ import {
 } from './lib/elements'
 import { exportArtboardPng } from './lib/exportPng'
 import { FRAME_PRESETS, MAX_ZOOM, MIN_ZOOM } from './lib/constants'
-import { clamp } from './lib/geometry'
+import {
+  applyRotationAroundCenter,
+  boundsCenter,
+  clamp,
+  getBounds,
+} from './lib/geometry'
 import type {
   Artboard,
   CustomComponentDef,
@@ -564,6 +569,38 @@ export default function App() {
     setElements((prev) => renameGroup(prev, groupId, name))
   }
 
+  /** Set selection orientation (degrees). Spins a single element; orbits a group/component. */
+  const handleRotateSelection = (degrees: number) => {
+    const selected = elements.filter((el) => selectedIds.includes(el.id))
+    if (!selected.length) return
+    if (selected.length === 1) {
+      recordHistory()
+      setElements((prev) =>
+        prev.map((el) =>
+          el.id === selected[0].id ? { ...el, rotation: degrees } : el,
+        ),
+      )
+      return
+    }
+    const bounds = getBounds(selected)
+    if (!bounds) return
+    const reference = selected[0].rotation || 0
+    const delta = degrees - reference
+    if (!delta) {
+      recordHistory()
+      setElements((prev) =>
+        prev.map((el) =>
+          selectedIds.includes(el.id) ? { ...el, rotation: degrees } : el,
+        ),
+      )
+      return
+    }
+    recordHistory()
+    const rotated = applyRotationAroundCenter(selected, boundsCenter(bounds), delta)
+    const map = Object.fromEntries(rotated.map((el) => [el.id, el]))
+    setElements((prev) => prev.map((el) => map[el.id] || el))
+  }
+
   const handleSave = () => {
     const doc = serializeWireframe({
       artboards,
@@ -720,9 +757,14 @@ export default function App() {
                 prev.map((el) => (el.id === id ? { ...el, cornerRadius } : el)),
               )
             }}
-            onRotationChange={(id, rotation) => {
+            onRotateElements={(updates) => {
+              const map = Object.fromEntries(updates.map((u) => [u.id, u]))
               setElements((prev) =>
-                prev.map((el) => (el.id === id ? { ...el, rotation } : el)),
+                prev.map((el) => {
+                  const u = map[el.id]
+                  if (!u) return el
+                  return { ...el, x: u.x, y: u.y, rotation: u.rotation }
+                }),
               )
             }}
             onEditStart={recordHistory}
@@ -779,6 +821,7 @@ export default function App() {
           onSaveAsComponent={saveSelectionAsComponent}
           canSaveAsComponent={canSaveComponent}
           canGroupSelection={canGroup(elements, selectedIds)}
+          onRotateSelection={handleRotateSelection}
           editingGroupId={editingGroupId}
           onEditGroup={setEditingGroupId}
         />

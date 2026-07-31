@@ -253,6 +253,29 @@ export function angleOfPoint(center: Point, p: Point): number {
   return (Math.atan2(p.y - center.y, p.x - center.x) * 180) / Math.PI
 }
 
+/** Rotate elements around a center: translate centers + add delta to each rotation. */
+export function applyRotationAroundCenter<T extends WireElement>(
+  origins: T[],
+  center: Point,
+  deltaDeg: number,
+): T[] {
+  if (!deltaDeg) return origins.map((el) => ({ ...el }))
+  return origins.map((el) => {
+    const c = elementCenter(el)
+    const next = rotatePoint(c, center, deltaDeg)
+    return {
+      ...el,
+      x: el.x + (next.x - c.x),
+      y: el.y + (next.y - c.y),
+      rotation: normalizeDegrees((el.rotation || 0) + deltaDeg),
+    }
+  })
+}
+
+export function boundsCenter(bounds: Rect): Point {
+  return { x: bounds.x + bounds.w / 2, y: bounds.y + bounds.h / 2 }
+}
+
 /** Axis-aligned bounds of a possibly rotated element (artboard-local). */
 export function rotatedAabb(el: Pick<WireElement, 'type' | 'x' | 'y' | 'w' | 'h' | 'rotation' | 'strokeWidth'>): Rect {
   const box = lineAwareBox(el)

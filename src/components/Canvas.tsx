@@ -12,10 +12,11 @@ import { canGroup, expandSelectionForGroups, sharedGroupId } from '../lib/elemen
 import {
   angleOfPoint,
   applyResize,
+  applyRotationAroundCenter,
+  boundsCenter,
   cornerRadiusFromPointer,
   elementCenter,
   getBounds,
-  normalizeDegrees,
   pointInElement,
   rectsIntersect,
   screenToWorld,
@@ -101,10 +102,10 @@ type Interaction =
     }
   | {
       mode: 'rotate'
-      id: string
+      ids: string[]
       center: Point
       startAngle: number
-      originRotation: number
+      origins: WireElementModel[]
       artboardId: string
       historyRecorded?: boolean
     }
@@ -131,7 +132,9 @@ type CanvasProps = {
     newBounds: Rect,
   ) => void
   onCornerRadiusChange: (id: string, cornerRadius: number) => void
-  onRotationChange: (id: string, rotation: number) => void
+  onRotateElements: (
+    updates: { id: string; x: number; y: number; rotation: number }[],
+  ) => void
   onEditStart: () => void
   onPlace: (tool: PlaceTool, x: number, y: number, artboardId: string) => void
   onClearPlace: () => void
@@ -161,7 +164,7 @@ export default function Canvas({
   onResizeElement,
   onResizeGroup,
   onCornerRadiusChange,
-  onRotationChange,
+  onRotateElements,
   onEditStart,
   onPlace,
   onClearPlace,
@@ -578,19 +581,20 @@ export default function Canvas({
   const onRotateDown = (e: ReactPointerEvent, _handle: ResizeHandle) => {
     e.stopPropagation()
     e.preventDefault()
-    if (groupSelected || selected.length !== 1 || !selectionBoard) return
-    const el = selected[0]
+    if (!selected.length || !selectionBoard || !bounds) return
+    if (selectedBoardIds.length !== 1) return
     const rect = getStageRect()
     const world = screenToWorld(e.clientX, e.clientY, rect, pan, zoom)
     const artboardLocal = worldToLocal(selectionBoard, world)
-    const center = elementCenter(el)
+    const center =
+      selected.length === 1 ? elementCenter(selected[0]) : boundsCenter(bounds)
     interaction.current = {
       mode: 'rotate',
-      id: el.id,
+      ids: selected.map((el) => el.id),
       center,
       startAngle: angleOfPoint(center, artboardLocal),
-      originRotation: el.rotation || 0,
-      artboardId: el.artboardId,
+      origins: selected.map((el) => ({ ...el })),
+      artboardId: selectionBoard.id,
     }
     stageRef.current?.setPointerCapture(e.pointerId)
   }
@@ -742,9 +746,20 @@ export default function Canvas({
       if (!ab) return
       const local = worldToLocal(ab, world)
       const angle = angleOfPoint(ix.center, local)
-      let rotation = normalizeDegrees(ix.originRotation + (angle - ix.startAngle))
-      if (snapOn) rotation = snap(rotation, true, 15)
-      onRotationChange(ix.id, rotation)
+      let delta = angle - ix.startAngle
+      if (snapOn) {
+        const base = ix.origins[0]?.rotation || 0
+        delta = snap(base + delta, true, 15) - base
+      }
+      const rotated = applyRotationAroundCenter(ix.origins, ix.center, delta)
+      onRotateElements(
+        rotated.map((el) => ({
+          id: el.id,
+          x: el.x,
+          y: el.y,
+          rotation: el.rotation || 0,
+        })),
+      )
       return
     }
 
@@ -944,9 +959,7 @@ export default function Canvas({
                     showCornerRadius={Boolean(singleRect && singleBoardSelection === ab.id)}
                     cornerRadius={singleRect?.cornerRadius || 0}
                     onCornerRadiusDown={onCornerRadiusDown}
-                    showRotateHandles={
-                      !groupSelected && selected.length === 1 && singleBoardSelection === ab.id
-                    }
+                    showRotateHandles={singleBoardSelection === ab.id}
                     onRotateDown={onRotateDown}
                     rotation={
                       !groupSelected && selected.length === 1 && singleBoardSelection === ab.id

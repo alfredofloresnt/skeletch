@@ -94,6 +94,7 @@ type InspectorProps = {
   onSaveAsComponent?: () => void
   canSaveAsComponent?: boolean
   canGroupSelection?: boolean
+  onRotateSelection?: (degrees: number) => void
   editingGroupId: string | null
   onEditGroup: (groupId: string | null) => void
 }
@@ -113,6 +114,7 @@ export default function Inspector({
   onSaveAsComponent,
   canSaveAsComponent,
   canGroupSelection,
+  onRotateSelection,
   editingGroupId,
   onEditGroup,
 }: InspectorProps) {
@@ -122,6 +124,11 @@ export default function Inspector({
     ? elements.find((e) => e.groupId === groupId)
     : null
   const allowGroup = canGroupSelection ?? canGroup(elements, selectedIds)
+  const sharedRotation = selected.length
+    ? selected.every((el) => (el.rotation || 0) === (selected[0].rotation || 0))
+      ? Math.round(selected[0].rotation || 0)
+      : null
+    : null
 
   if (selected.length === 0) {
     return (
@@ -193,6 +200,33 @@ export default function Inspector({
             </button>
           </div>
         )}
+        <div className="inspector-section">
+          <label className="field-label">Rotation</label>
+          <div className="field-row">
+            <label>
+              °
+              <input
+                type="number"
+                step={1}
+                value={sharedRotation ?? ''}
+                placeholder="—"
+                onChange={(e) => {
+                  if (e.target.value === '') return
+                  onRotateSelection?.(Number(e.target.value) || 0)
+                }}
+                aria-label="Rotation degrees"
+              />
+            </label>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => onRotateSelection?.(0)}
+              title="Reset rotation"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
         <div className="inspector-section">
           <label className="field-label">Layer</label>
           <div className="btn-row">
@@ -326,14 +360,14 @@ export default function Inspector({
               type="number"
               step={1}
               value={Math.round(el.rotation || 0)}
-              onChange={(e) => set({ rotation: Number(e.target.value) || 0 })}
+              onChange={(e) => onRotateSelection?.(Number(e.target.value) || 0)}
               aria-label="Rotation degrees"
             />
           </label>
           <button
             type="button"
             className="btn-ghost"
-            onClick={() => set({ rotation: 0 })}
+            onClick={() => onRotateSelection?.(0)}
             title="Reset rotation"
           >
             Reset
