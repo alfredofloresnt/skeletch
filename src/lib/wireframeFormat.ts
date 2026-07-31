@@ -1,5 +1,13 @@
 import { createArtboard } from './artboards'
-import type { Artboard, TextAlign, VerticalAlign, WireElement, WireframeDocument } from './types'
+import { sanitizeVariable } from './variables'
+import type {
+  Artboard,
+  DesignVariable,
+  TextAlign,
+  VerticalAlign,
+  WireElement,
+  WireframeDocument,
+} from './types'
 
 export const WIREFRAME_VERSION = 2
 export const WIREFRAME_MIME = 'application/x-wireframe+json'
@@ -7,6 +15,7 @@ export const WIREFRAME_MIME = 'application/x-wireframe+json'
 /**
  * Portable document format (.wireframe)
  * v2: artboards[] + activeArtboardId + elements with artboardId
+ * optional variables[] + fillVar / fontSizeVar / cornerRadiusVar
  * v1: singular artboard + presetId (migrated on parse)
  */
 
@@ -15,11 +24,13 @@ export function serializeWireframe({
   activeArtboardId,
   snapOn,
   elements,
+  variables = [],
 }: {
   artboards: Artboard[]
   activeArtboardId: string
   snapOn: boolean
   elements: WireElement[]
+  variables?: DesignVariable[]
 }): WireframeDocument {
   return {
     format: 'wireframe',
@@ -29,6 +40,9 @@ export function serializeWireframe({
     activeArtboardId,
     snapOn: Boolean(snapOn),
     elements: elements.map((el) => sanitizeElement(el)),
+    variables: variables
+      .map((v) => sanitizeVariable(v))
+      .filter((v): v is DesignVariable => Boolean(v)),
   }
 }
 
@@ -68,7 +82,17 @@ function sanitizeElement(el: WireElement, fallbackArtboardId?: string): WireElem
     groupId: el.groupId ?? null,
     groupName: el.groupName,
     groupKind: el.groupKind,
+    fillVar: el.fillVar ?? null,
+    fontSizeVar: el.fontSizeVar ?? null,
+    cornerRadiusVar: el.cornerRadiusVar ?? null,
   }
+}
+
+function sanitizeVariables(raw: unknown): DesignVariable[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((v) => sanitizeVariable(v as Partial<DesignVariable>))
+    .filter((v): v is DesignVariable => Boolean(v))
 }
 
 type ParsedDoc = Omit<WireframeDocument, 'format' | 'version' | 'savedAt'>
@@ -98,6 +122,7 @@ export function parseWireframe(raw: string | unknown): ParsedDoc {
       artboards,
       activeArtboardId,
       snapOn: data.snapOn !== false,
+      variables: sanitizeVariables(data.variables),
       elements: (data.elements as WireElement[]).map((el) => {
         const next = sanitizeElement(el, fallback)
         if (!artboards.some((ab) => ab.id === next.artboardId)) {
@@ -125,6 +150,7 @@ export function parseWireframe(raw: string | unknown): ParsedDoc {
     artboards: [artboard],
     activeArtboardId: artboard.id,
     snapOn: data.snapOn !== false,
+    variables: sanitizeVariables(data.variables),
     elements: (data.elements as WireElement[]).map((el) =>
       sanitizeElement(el, artboard.id),
     ),

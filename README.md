@@ -9,6 +9,7 @@ A low-fidelity wireframe editor for sketching UI layouts in the browser. Built w
 - **Shapes & widgets** — rectangles, circles, triangles, lines, text, and image placeholders, plus composed UI: input, search, button, checkbox, switch, slider, dropdown, card, slideshow, and grid
 - **Multi-artboard canvas** — place multiple boards (Phone / Tablet / Desktop / custom sizes) on one infinite stage; drag elements between boards
 - **Custom components** — save a selection as a reusable component; place from the Elements → Custom palette; Open/Save gallery as `.components.json` (also kept in localStorage)
+- **Design variables** — color and number variables in the Vars tab; bind them to Fill, font size, and corner radius so edits sync across elements
 - **Groups & layers** — group elements, double-click to edit inside a group, reorder layers for the active board, and control depth in the inspector
 - **Inspector** — position, size, text, stroke, fill, opacity, corner radius, and layer depth
 - **Portable files** — save and open `.wireframe` JSON documents (v2 multi-artboard; v1 files migrate); export the active artboard as PNG

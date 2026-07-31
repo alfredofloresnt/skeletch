@@ -1,5 +1,7 @@
 import { canGroup, sharedGroupId } from '../lib/elements'
-import type { TextAlign, VerticalAlign, WireElement } from '../lib/types'
+import type { DesignVariable, TextAlign, VerticalAlign, WireElement } from '../lib/types'
+import ColorPicker from './ColorPicker'
+import VariableNumberInput from './VariableNumberInput'
 
 function AlignIcon({ align }: { align: TextAlign }) {
   const lines =
@@ -82,7 +84,9 @@ function VAlignIcon({ align }: { align: VerticalAlign }) {
 type InspectorProps = {
   elements: WireElement[]
   selectedIds: string[]
+  variables: DesignVariable[]
   onUpdate: (id: string, patch: Partial<WireElement>) => void
+  onAddVariable: (variable: DesignVariable) => void
   onBringForward: () => void
   onSendBackward: () => void
   onBringToFront: () => void
@@ -102,7 +106,9 @@ type InspectorProps = {
 export default function Inspector({
   elements,
   selectedIds,
+  variables,
   onUpdate,
+  onAddVariable,
   onBringForward,
   onSendBackward,
   onBringToFront,
@@ -384,12 +390,17 @@ export default function Inspector({
             onChange={(e) => set({ text: e.target.value })}
           />
           <label className="field-label">Font size</label>
-          <input
-            type="number"
+          <VariableNumberInput
+            label="Font size"
+            value={el.fontSize || 16}
+            variableId={el.fontSizeVar}
+            variables={variables}
             min={8}
             max={200}
-            value={el.fontSize || 16}
-            onChange={(e) => set({ fontSize: Number(e.target.value) })}
+            onChange={(value, variableId) =>
+              set({ fontSize: value, fontSizeVar: variableId })
+            }
+            onAddVariable={onAddVariable}
           />
           <label className="field-label">Horizontal</label>
           <div className="btn-row btn-row--icons">
@@ -440,43 +451,43 @@ export default function Inspector({
         <label className="field-label">Appearance</label>
         {el.type !== 'line' && el.type !== 'text' && (
           <>
-            <label className="field-inline">
-              Fill
-              <input
-                type="color"
-                value={el.fill === 'transparent' ? '#ffffff' : el.fill}
-                onChange={(e) => set({ fill: e.target.value })}
-              />
-            </label>
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => set({ fill: 'transparent' })}
-            >
-              Clear fill
-            </button>
+            <label className="field-label">Fill</label>
+            <ColorPicker
+              label="Fill"
+              value={el.fill || 'transparent'}
+              variableId={el.fillVar}
+              variables={variables}
+              allowTransparent
+              onChange={(fill, fillVar) => set({ fill, fillVar })}
+              onAddVariable={onAddVariable}
+            />
           </>
         )}
         {el.type === 'text' && (
-          <label className="field-inline">
-            Color
-            <input
-              type="color"
+          <>
+            <label className="field-label">Color</label>
+            <ColorPicker
+              label="Text color"
               value={el.fill || '#1a1a1a'}
-              onChange={(e) => set({ fill: e.target.value })}
+              variableId={el.fillVar}
+              variables={variables}
+              allowTransparent={false}
+              onChange={(fill, fillVar) => set({ fill, fillVar })}
+              onAddVariable={onAddVariable}
             />
-          </label>
+          </>
         )}
         {el.type !== 'text' && (
           <>
-            <label className="field-inline">
-              Stroke
-              <input
-                type="color"
-                value={el.stroke || '#1a1a1a'}
-                onChange={(e) => set({ stroke: e.target.value })}
-              />
-            </label>
+            <label className="field-label">Stroke</label>
+            <ColorPicker
+              label="Stroke"
+              value={el.stroke || '#1a1a1a'}
+              variables={variables}
+              allowTransparent={false}
+              onChange={(stroke) => set({ stroke })}
+              onAddVariable={onAddVariable}
+            />
             <label className="field-label">Stroke width</label>
             <input
               type="number"
@@ -490,12 +501,17 @@ export default function Inspector({
         {(el.type === 'rect' || el.type === 'image') && (
           <>
             <label className="field-label">Corner radius</label>
-            <input
-              type="number"
+            <VariableNumberInput
+              label="Corner radius"
+              value={el.cornerRadius || 0}
+              variableId={el.cornerRadiusVar}
+              variables={variables}
               min={0}
               max={200}
-              value={el.cornerRadius || 0}
-              onChange={(e) => set({ cornerRadius: Number(e.target.value) })}
+              onChange={(value, variableId) =>
+                set({ cornerRadius: value, cornerRadiusVar: variableId })
+              }
+              onAddVariable={onAddVariable}
             />
           </>
         )}

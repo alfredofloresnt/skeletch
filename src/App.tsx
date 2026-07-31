@@ -56,16 +56,24 @@ import {
 import type {
   Artboard,
   CustomComponentDef,
+  DesignVariable,
   PlaceTool,
   Point,
   WireElement,
 } from './lib/types'
 import { isCustomPlace } from './lib/types'
 import {
+  clearVariableBindings,
+  renameVariable,
+  syncElementsToVariable,
+  updateVariableValue,
+} from './lib/variables'
+import {
   downloadWireframe,
   readWireframeFile,
   serializeWireframe,
 } from './lib/wireframeFormat'
+import type { SideTab } from './components/SidePanel'
 import './App.css'
 
 const HISTORY_LIMIT = 100
@@ -75,6 +83,7 @@ type HistorySnapshot = {
   activeArtboardId: string
   snapOn: boolean
   elements: WireElement[]
+  variables: DesignVariable[]
   selectedIds: string[]
   editingGroupId: string | null
   artboardSelected: boolean
@@ -92,7 +101,8 @@ export default function App() {
   const [snapOn, setSnapOn] = useState(true)
   const [placeTool, setPlaceTool] = useState<PlaceTool | null>(null)
   const [components, setComponents] = useState<CustomComponentDef[]>(() => loadLibrary())
-  const [sideTab, setSideTab] = useState<'elements' | 'layers'>('elements')
+  const [variables, setVariables] = useState<DesignVariable[]>([])
+  const [sideTab, setSideTab] = useState<SideTab>('elements')
   const [dragLayerId, setDragLayerId] = useState<string | null>(null)
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
   const [pan, setPan] = useState<Point>({ x: 80, y: 60 })
@@ -116,6 +126,7 @@ export default function App() {
     activeArtboardId,
     snapOn,
     elements,
+    variables,
     selectedIds,
     editingGroupId,
     artboardSelected,
@@ -128,6 +139,7 @@ export default function App() {
       ...current,
       artboards: current.artboards.map((ab) => ({ ...ab })),
       elements: current.elements.map((el) => ({ ...el })),
+      variables: current.variables.map((v) => ({ ...v })),
       selectedIds: [...current.selectedIds],
     })
     if (historyRef.current.length > HISTORY_LIMIT) historyRef.current.shift()
@@ -141,6 +153,7 @@ export default function App() {
     setActiveArtboardId(previous.activeArtboardId)
     setSnapOn(previous.snapOn)
     setElements(previous.elements)
+    setVariables(previous.variables)
     setSelectedIds(previous.selectedIds)
     setEditingGroupId(previous.editingGroupId)
     setArtboardSelected(previous.artboardSelected)
@@ -601,12 +614,40 @@ export default function App() {
     setElements((prev) => prev.map((el) => map[el.id] || el))
   }
 
+  const handleAddVariable = (variable: DesignVariable) => {
+    recordHistory()
+    setVariables((prev) => [...prev, variable])
+  }
+
+  const handleUpdateVariable = (
+    id: string,
+    patch: { name?: string; value?: string | number },
+  ) => {
+    // Value changes sync elements and need undo; live rename skips history spam
+    if (patch.value != null) recordHistory()
+    let next = variables
+    if (patch.name != null) next = renameVariable(next, id, patch.name)
+    if (patch.value != null) next = updateVariableValue(next, id, patch.value)
+    setVariables(next)
+    const updated = next.find((v) => v.id === id)
+    if (updated && patch.value != null) {
+      setElements((els) => syncElementsToVariable(els, updated))
+    }
+  }
+
+  const handleDeleteVariable = (id: string) => {
+    recordHistory()
+    setVariables((prev) => prev.filter((v) => v.id !== id))
+    setElements((prev) => clearVariableBindings(prev, id))
+  }
+
   const handleSave = () => {
     const doc = serializeWireframe({
       artboards,
       activeArtboardId,
       snapOn,
       elements,
+      variables,
     })
     downloadWireframe(doc)
   }
@@ -619,6 +660,7 @@ export default function App() {
       setActiveArtboardId(doc.activeArtboardId)
       setSnapOn(doc.snapOn)
       setElements(doc.elements)
+      setVariables(doc.variables || [])
       setSelectedIds([])
       setArtboardSelected(false)
       setEditingGroupId(null)
@@ -689,6 +731,10 @@ export default function App() {
           onDeleteComponent={(id) => updateLibrary(removeComponent(components, id))}
           onSaveAsComponent={saveSelectionAsComponent}
           canSaveAsComponent={canSaveComponent}
+          variables={variables}
+          onAddVariable={handleAddVariable}
+          onUpdateVariable={handleUpdateVariable}
+          onDeleteVariable={handleDeleteVariable}
           elements={activeElements}
           selectedIds={selectedIds}
           onSelect={(ids) => {
@@ -793,7 +839,9 @@ export default function App() {
         <Inspector
           elements={elements}
           selectedIds={selectedIds}
+          variables={variables}
           onUpdate={updateElement}
+          onAddVariable={handleAddVariable}
           onBringForward={() => {
             recordHistory()
             scopeZ((scoped) => bringForward(scoped, selectedIds))

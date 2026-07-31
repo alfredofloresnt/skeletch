@@ -83,6 +83,19 @@ export interface WireElement extends LayoutPart {
   groupId?: string | null
   groupName?: string
   groupKind?: string
+  /** Bound design variable ids (resolved values stay on fill / fontSize / cornerRadius). */
+  fillVar?: string | null
+  fontSizeVar?: string | null
+  cornerRadiusVar?: string | null
+}
+
+export type DesignVariableType = 'color' | 'number'
+
+export interface DesignVariable {
+  id: string
+  name: string
+  type: DesignVariableType
+  value: string | number
 }
 
 export type LayerTreeRow =
@@ -108,6 +121,7 @@ export interface WireframeDocument {
   activeArtboardId: string
   snapOn: boolean
   elements: WireElement[]
+  variables?: DesignVariable[]
 }
 
 export interface ActionMenuItem {

@@ -18,13 +18,20 @@ import {
 import { getBounds } from '../lib/geometry'
 import type {
   CustomComponentDef,
+  DesignVariable,
   LayoutPart,
   PlaceTool,
   PlaceType,
   WireElement as WireElementModel,
 } from '../lib/types'
 import { isCustomPlace } from '../lib/types'
+import {
+  createVariable,
+  nextVariableName,
+  sanitizeColor,
+} from '../lib/variables'
 import ActionMenu from './ActionMenu'
+import ColorPicker from './ColorPicker'
 import WireElement from './WireElement'
 
 const PREVIEW_W = 72
@@ -136,7 +143,7 @@ function PaletteButton({
   )
 }
 
-type SideTab = 'elements' | 'layers'
+export type SideTab = 'elements' | 'layers' | 'variables'
 type DropHint = { key: string; edge: 'before' | 'after'; scope: string }
 type ContextMenu = { x: number; y: number; ids: string[] }
 
@@ -153,6 +160,10 @@ type SidePanelProps = {
   onDeleteComponent: (id: string) => void
   onSaveAsComponent: () => void
   canSaveAsComponent: boolean
+  variables: DesignVariable[]
+  onAddVariable: (variable: DesignVariable) => void
+  onUpdateVariable: (id: string, patch: { name?: string; value?: string | number }) => void
+  onDeleteVariable: (id: string) => void
   elements: WireElementModel[]
   selectedIds: string[]
   onSelect: (ids: string[]) => void
@@ -181,6 +192,10 @@ export default function SidePanel({
   onDeleteComponent,
   onSaveAsComponent,
   canSaveAsComponent,
+  variables,
+  onAddVariable,
+  onUpdateVariable,
+  onDeleteVariable,
   elements,
   selectedIds,
   onSelect,
@@ -369,7 +384,7 @@ export default function SidePanel({
 
   return (
     <aside className="side-panel">
-      <div className="panel-tabs" role="tablist">
+      <div className="panel-tabs panel-tabs--3" role="tablist">
         <button
           type="button"
           role="tab"
@@ -387,6 +402,15 @@ export default function SidePanel({
           onClick={() => onTab('layers')}
         >
           Layers
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'variables'}
+          className={tab === 'variables' ? 'is-active' : ''}
+          onClick={() => onTab('variables')}
+        >
+          Vars
         </button>
       </div>
 
@@ -684,6 +708,91 @@ export default function SidePanel({
               items={menuItems}
               onClose={() => setMenu(null)}
             />
+          )}
+        </div>
+      )}
+
+      {tab === 'variables' && (
+        <div className="panel-body">
+          <p className="panel-hint">
+            Bind colors to Fill and numbers to font size / corner radius. Changing a value updates
+            every bound element.
+          </p>
+          <div className="layers-actions">
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => {
+                const name = window.prompt(
+                  'Color variable name',
+                  nextVariableName(variables, 'color'),
+                )
+                if (name == null) return
+                onAddVariable(createVariable('color', name, '#1a1a1a'))
+              }}
+            >
+              + Color
+            </button>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => {
+                const name = window.prompt(
+                  'Number variable name',
+                  nextVariableName(variables, 'number'),
+                )
+                if (name == null) return
+                onAddVariable(createVariable('number', name, 16))
+              }}
+            >
+              + Number
+            </button>
+          </div>
+          {!variables.length ? (
+            <p className="panel-hint">No variables yet.</p>
+          ) : (
+            <ul className="var-list">
+              {variables.map((v) => (
+                <li key={v.id} className="var-row">
+                  <span className="var-row-type">{v.type}</span>
+                  <input
+                    className="var-row-name"
+                    value={v.name}
+                    aria-label="Variable name"
+                    onChange={(e) => onUpdateVariable(v.id, { name: e.target.value })}
+                  />
+                  {v.type === 'color' ? (
+                    <ColorPicker
+                      value={sanitizeColor(String(v.value))}
+                      allowTransparent={false}
+                      showVariables={false}
+                      label={`Value of ${v.name}`}
+                      onChange={(color) => onUpdateVariable(v.id, { value: color })}
+                    />
+                  ) : (
+                    <input
+                      type="number"
+                      className="var-row-number"
+                      value={Number(v.value)}
+                      aria-label={`Value of ${v.name}`}
+                      onChange={(e) =>
+                        onUpdateVariable(v.id, { value: Number(e.target.value) })
+                      }
+                    />
+                  )}
+                  <button
+                    type="button"
+                    className="btn-ghost var-row-delete"
+                    title="Delete variable"
+                    onClick={() => {
+                      if (window.confirm(`Delete $${v.name}?`)) onDeleteVariable(v.id)
+                    }}
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}
