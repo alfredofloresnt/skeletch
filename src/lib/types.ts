@@ -20,6 +20,13 @@ export type ComposedKind =
 
 export type PlaceType = AtomicType | ComposedKind
 
+/** Click/drag place target: built-in type or a custom component id. */
+export type PlaceTool = PlaceType | { customId: string }
+
+export function isCustomPlace(tool: PlaceTool): tool is { customId: string } {
+  return typeof tool === 'object' && tool !== null && 'customId' in tool
+}
+
 export type TextAlign = 'left' | 'middle' | 'right'
 export type VerticalAlign = 'top' | 'middle' | 'bottom'
 
@@ -54,6 +61,8 @@ export interface LayoutPart {
   y: number
   w: number
   h: number
+  /** Degrees, clockwise. */
+  rotation?: number
   fill?: string
   stroke?: string
   strokeWidth?: number
@@ -106,4 +115,19 @@ export interface ActionMenuItem {
   label: string
   disabled?: boolean
   onSelect: () => void
+}
+
+/** Saved reusable component (relative LayoutPart snapshot). */
+export interface CustomComponentDef {
+  id: string
+  name: string
+  parts: LayoutPart[]
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface ComponentLibrary {
+  format: 'skeletch-components'
+  version: number
+  components: CustomComponentDef[]
 }

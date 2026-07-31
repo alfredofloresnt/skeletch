@@ -1,27 +1,39 @@
-import { useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import {
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react'
 import { COMPOSED_TYPES, ELEMENT_TYPES } from '../lib/constants'
 import {
   buildLayerTree,
   canGroup,
   getPalettePreview,
+  getPartsPreview,
   sharedGroupId,
 } from '../lib/elements'
 import { getBounds } from '../lib/geometry'
-import type { PlaceType, WireElement as WireElementModel } from '../lib/types'
+import type {
+  CustomComponentDef,
+  LayoutPart,
+  PlaceTool,
+  PlaceType,
+  WireElement as WireElementModel,
+} from '../lib/types'
+import { isCustomPlace } from '../lib/types'
 import ActionMenu from './ActionMenu'
 import WireElement from './WireElement'
 
 const PREVIEW_W = 72
 const PREVIEW_H = 52
 
-function PalettePreview({ type }: { type: PlaceType }) {
-  const els = useMemo(() => getPalettePreview(type), [type])
+function PreviewStage({ els }: { els: WireElementModel[] }) {
   const bounds = useMemo(() => getBounds(els), [els])
-
   if (!bounds || bounds.w < 1 || bounds.h < 1) return null
-
   const scale = Math.min(PREVIEW_W / bounds.w, PREVIEW_H / bounds.h)
-
   return (
     <div className="palette-preview" aria-hidden>
       <div
@@ -40,60 +52,87 @@ function PalettePreview({ type }: { type: PlaceType }) {
   )
 }
 
-type PaletteDragStart = { x: number; y: number; type: PlaceType; dragged?: boolean }
+function PalettePreview({ type }: { type: PlaceType }) {
+  const els = useMemo(() => getPalettePreview(type), [type])
+  return <PreviewStage els={els} />
+}
+
+function PartsPreview({ parts, id }: { parts: LayoutPart[]; id: string }) {
+  const els = useMemo(() => getPartsPreview(parts, `preview-${id}`), [parts, id])
+  return <PreviewStage els={els} />
+}
+
+function toolsEqual(a: PlaceTool | null, b: PlaceTool): boolean {
+  if (a == null) return false
+  if (isCustomPlace(a) && isCustomPlace(b)) return a.customId === b.customId
+  if (!isCustomPlace(a) && !isCustomPlace(b)) return a === b
+  return false
+}
+
+type PaletteDragStart = { x: number; y: number; tool: PlaceTool; dragged?: boolean }
 
 function PaletteButton({
-  item,
-  placeType,
-  onPlaceType,
+  tool,
+  label,
+  placeTool,
+  onPlaceTool,
   onPaletteDragStart,
+  preview,
+  trailing,
 }: {
-  item: { type: PlaceType; label: string }
-  placeType: PlaceType | null
-  onPlaceType: (type: PlaceType | null) => void
-  onPaletteDragStart: (type: PlaceType, x: number, y: number) => void
+  tool: PlaceTool
+  label: string
+  placeTool: PlaceTool | null
+  onPlaceTool: (tool: PlaceTool | null) => void
+  onPaletteDragStart: (tool: PlaceTool, label: string, x: number, y: number) => void
+  preview: ReactNode
+  trailing?: ReactNode
 }) {
   const startRef = useRef<PaletteDragStart | null>(null)
+  const active = toolsEqual(placeTool, tool)
 
   return (
-    <button
-      type="button"
-      className={`palette-item${placeType === item.type ? ' is-active' : ''}`}
-      onPointerDown={(e: ReactPointerEvent<HTMLButtonElement>) => {
-        if (e.button !== 0) return
-        e.preventDefault()
-        window.getSelection()?.removeAllRanges()
-        startRef.current = { x: e.clientX, y: e.clientY, type: item.type }
-        e.currentTarget.setPointerCapture(e.pointerId)
-      }}
-      onPointerMove={(e: ReactPointerEvent<HTMLButtonElement>) => {
-        const start = startRef.current
-        if (!start || start.dragged) return
-        const dx = e.clientX - start.x
-        const dy = e.clientY - start.y
-        if (dx * dx + dy * dy < 36) return
-        start.dragged = true
-        onPlaceType(null)
-        onPaletteDragStart(item.type, e.clientX, e.clientY)
-        try {
-          e.currentTarget.releasePointerCapture(e.pointerId)
-        } catch {
-          /* already released */
-        }
-      }}
-      onPointerUp={() => {
-        const start = startRef.current
-        startRef.current = null
-        if (!start || start.dragged) return
-        onPlaceType(placeType === item.type ? null : item.type)
-      }}
-      onPointerCancel={() => {
-        startRef.current = null
-      }}
-    >
-      <PalettePreview type={item.type} />
-      <span>{item.label}</span>
-    </button>
+    <div className={`palette-item-row${active ? ' is-active' : ''}`}>
+      <button
+        type="button"
+        className={`palette-item${active ? ' is-active' : ''}`}
+        onPointerDown={(e: ReactPointerEvent<HTMLButtonElement>) => {
+          if (e.button !== 0) return
+          e.preventDefault()
+          window.getSelection()?.removeAllRanges()
+          startRef.current = { x: e.clientX, y: e.clientY, tool }
+          e.currentTarget.setPointerCapture(e.pointerId)
+        }}
+        onPointerMove={(e: ReactPointerEvent<HTMLButtonElement>) => {
+          const start = startRef.current
+          if (!start || start.dragged) return
+          const dx = e.clientX - start.x
+          const dy = e.clientY - start.y
+          if (dx * dx + dy * dy < 36) return
+          start.dragged = true
+          onPlaceTool(null)
+          onPaletteDragStart(tool, label, e.clientX, e.clientY)
+          try {
+            e.currentTarget.releasePointerCapture(e.pointerId)
+          } catch {
+            /* already released */
+          }
+        }}
+        onPointerUp={() => {
+          const start = startRef.current
+          startRef.current = null
+          if (!start || start.dragged) return
+          onPlaceTool(active ? null : tool)
+        }}
+        onPointerCancel={() => {
+          startRef.current = null
+        }}
+      >
+        {preview}
+        <span>{label}</span>
+      </button>
+      {trailing}
+    </div>
   )
 }
 
@@ -104,9 +143,16 @@ type ContextMenu = { x: number; y: number; ids: string[] }
 type SidePanelProps = {
   tab: SideTab
   onTab: (tab: SideTab) => void
-  placeType: PlaceType | null
-  onPlaceType: (type: PlaceType | null) => void
-  onPaletteDragStart: (type: PlaceType, x: number, y: number) => void
+  placeTool: PlaceTool | null
+  onPlaceTool: (tool: PlaceTool | null) => void
+  onPaletteDragStart: (tool: PlaceTool, label: string, x: number, y: number) => void
+  components: CustomComponentDef[]
+  onSaveGallery: () => void
+  onOpenGallery: (file: File) => void
+  onRenameComponent: (id: string, name: string) => void
+  onDeleteComponent: (id: string) => void
+  onSaveAsComponent: () => void
+  canSaveAsComponent: boolean
   elements: WireElementModel[]
   selectedIds: string[]
   onSelect: (ids: string[]) => void
@@ -125,9 +171,16 @@ type SidePanelProps = {
 export default function SidePanel({
   tab,
   onTab,
-  placeType,
-  onPlaceType,
+  placeTool,
+  onPlaceTool,
   onPaletteDragStart,
+  components,
+  onSaveGallery,
+  onOpenGallery,
+  onRenameComponent,
+  onDeleteComponent,
+  onSaveAsComponent,
+  canSaveAsComponent,
   elements,
   selectedIds,
   onSelect,
@@ -142,6 +195,7 @@ export default function SidePanel({
   onRenameGroup,
   canGroupSelection,
 }: SidePanelProps) {
+  const galleryFileRef = useRef<HTMLInputElement>(null)
   const tree = buildLayerTree(elements)
   const [menu, setMenu] = useState<ContextMenu | null>(null)
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
@@ -344,10 +398,12 @@ export default function SidePanel({
             {ELEMENT_TYPES.map((item) => (
               <PaletteButton
                 key={item.type}
-                item={item}
-                placeType={placeType}
-                onPlaceType={onPlaceType}
+                tool={item.type}
+                label={item.label}
+                placeTool={placeTool}
+                onPlaceTool={onPlaceTool}
                 onPaletteDragStart={onPaletteDragStart}
+                preview={<PalettePreview type={item.type} />}
               />
             ))}
           </div>
@@ -356,13 +412,92 @@ export default function SidePanel({
             {COMPOSED_TYPES.map((item) => (
               <PaletteButton
                 key={item.type}
-                item={item}
-                placeType={placeType}
-                onPlaceType={onPlaceType}
+                tool={item.type}
+                label={item.label}
+                placeTool={placeTool}
+                onPlaceTool={onPlaceTool}
                 onPaletteDragStart={onPaletteDragStart}
+                preview={<PalettePreview type={item.type} />}
               />
             ))}
           </div>
+
+          <div className="palette-section-header">
+            <p className="palette-section-label">Custom</p>
+            <div className="gallery-actions">
+              <input
+                ref={galleryFileRef}
+                type="file"
+                accept=".json,.components.json,application/json,application/x-skeletch-components+json"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) onOpenGallery(file)
+                  e.target.value = ''
+                }}
+              />
+              <button
+                type="button"
+                className="btn-ghost gallery-btn"
+                onClick={() => galleryFileRef.current?.click()}
+              >
+                Open gallery
+              </button>
+              <button
+                type="button"
+                className="btn-ghost gallery-btn"
+                onClick={onSaveGallery}
+                disabled={!components.length}
+              >
+                Save gallery
+              </button>
+            </div>
+          </div>
+          {!components.length ? (
+            <p className="panel-hint">Select elements → Save as component</p>
+          ) : (
+            <div className="palette-grid">
+              {components.map((cmp) => (
+                <PaletteButton
+                  key={cmp.id}
+                  tool={{ customId: cmp.id }}
+                  label={cmp.name}
+                  placeTool={placeTool}
+                  onPlaceTool={onPlaceTool}
+                  onPaletteDragStart={onPaletteDragStart}
+                  preview={<PartsPreview parts={cmp.parts} id={cmp.id} />}
+                  trailing={
+                    <div className="custom-item-actions">
+                      <button
+                        type="button"
+                        className="btn-ghost custom-item-btn"
+                        title="Rename"
+                        onClick={() => {
+                          const next = window.prompt('Rename component', cmp.name)
+                          if (next == null) return
+                          onRenameComponent(cmp.id, next)
+                        }}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost custom-item-btn"
+                        title="Delete"
+                        onClick={() => {
+                          if (window.confirm(`Delete “${cmp.name}”?`)) {
+                            onDeleteComponent(cmp.id)
+                          }
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  }
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -376,7 +511,7 @@ export default function SidePanel({
               Editing group — double-click canvas empty or press Esc to exit.
             </p>
           )}
-          {selectedIds.length >= 2 && (
+          {selectedIds.length >= 1 && (
             <div className="layers-actions">
               <button
                 type="button"
@@ -393,6 +528,14 @@ export default function SidePanel({
                 onClick={() => selectedGroupId && onUngroup?.(selectedGroupId)}
               >
                 Ungroup
+              </button>
+              <button
+                type="button"
+                className="btn-ghost"
+                disabled={!canSaveAsComponent}
+                onClick={onSaveAsComponent}
+              >
+                Save as component
               </button>
             </div>
           )}

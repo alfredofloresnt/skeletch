@@ -186,6 +186,15 @@ function paintShape(ctx: CanvasRenderingContext2D, el: WireElement): void {
   ctx.save()
   ctx.globalAlpha = el.opacity ?? 1
 
+  const rot = el.rotation || 0
+  if (rot && el.type !== 'line') {
+    const cx = el.x + el.w / 2
+    const cy = el.y + el.h / 2
+    ctx.translate(cx, cy)
+    ctx.rotate((rot * Math.PI) / 180)
+    ctx.translate(-cx, -cy)
+  }
+
   if (el.type === 'text') {
     paintText(ctx, el)
     ctx.restore()
@@ -193,6 +202,13 @@ function paintShape(ctx: CanvasRenderingContext2D, el: WireElement): void {
   }
 
   if (el.type === 'line') {
+    if (rot) {
+      const cx = el.x + el.w / 2
+      const cy = el.y + el.h / 2
+      ctx.translate(cx, cy)
+      ctx.rotate((rot * Math.PI) / 180)
+      ctx.translate(-cx, -cy)
+    }
     ctx.strokeStyle = el.stroke || '#1a1a1a'
     ctx.lineWidth = el.strokeWidth || 2
     ctx.beginPath()

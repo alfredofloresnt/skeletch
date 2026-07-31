@@ -1,5 +1,5 @@
 import { FRAME_PRESETS } from './constants'
-import { uid } from './geometry'
+import { rotatedAabb, uid } from './geometry'
 import type { Artboard, Point, Rect, WireElement } from './types'
 
 export const ARTBOARD_GAP = 80
@@ -106,12 +106,8 @@ export function elementWorldRect(
   el: WireElement,
   ab: Artboard,
 ): Rect {
-  return {
-    x: ab.x + el.x,
-    y: ab.y + el.y,
-    w: Math.abs(el.w) || 1,
-    h: Math.abs(el.h) || 1,
-  }
+  const box = rotatedAabb(el)
+  return { x: ab.x + box.x, y: ab.y + box.y, w: box.w, h: box.h }
 }
 
 /** Union of all artboard rects in world space (for fit-all). */

@@ -11,11 +11,25 @@ import {
   worldToLocal,
 } from './lib/artboards'
 import {
+  addComponent,
+  canSaveSelection,
+  downloadLibrary,
+  loadLibrary,
+  mergeLibraries,
+  nextComponentDefaultName,
+  persistLibrary,
+  readLibraryFile,
+  removeComponent,
+  renameComponent,
+  selectionToParts,
+} from './lib/customComponents'
+import {
   bringForward,
   bringToFront,
   canGroup,
   createComposed,
   createElement,
+  createFromParts,
   duplicateElements,
   expandSelectionForGroups,
   groupElements,
@@ -34,7 +48,14 @@ import {
 import { exportArtboardPng } from './lib/exportPng'
 import { FRAME_PRESETS, MAX_ZOOM, MIN_ZOOM } from './lib/constants'
 import { clamp } from './lib/geometry'
-import type { Artboard, PlaceType, Point, WireElement } from './lib/types'
+import type {
+  Artboard,
+  CustomComponentDef,
+  PlaceTool,
+  Point,
+  WireElement,
+} from './lib/types'
+import { isCustomPlace } from './lib/types'
 import {
   downloadWireframe,
   readWireframeFile,
@@ -54,7 +75,7 @@ type HistorySnapshot = {
   artboardSelected: boolean
 }
 
-type PaletteDrag = { type: PlaceType; x: number; y: number }
+type PaletteDrag = { tool: PlaceTool; label: string; x: number; y: number }
 
 export default function App() {
   const initialBoard = useMemo(() => defaultArtboard(), [])
@@ -64,7 +85,8 @@ export default function App() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [artboardSelected, setArtboardSelected] = useState(false)
   const [snapOn, setSnapOn] = useState(true)
-  const [placeType, setPlaceType] = useState<PlaceType | null>(null)
+  const [placeTool, setPlaceTool] = useState<PlaceTool | null>(null)
+  const [components, setComponents] = useState<CustomComponentDef[]>(() => loadLibrary())
   const [sideTab, setSideTab] = useState<'elements' | 'layers'>('elements')
   const [dragLayerId, setDragLayerId] = useState<string | null>(null)
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
@@ -74,6 +96,8 @@ export default function App() {
   const stageWrapRef = useRef<HTMLDivElement>(null)
   const clipboardRef = useRef<WireElement[]>([])
   const paletteDragRef = useRef<PaletteDrag | null>(null)
+  const componentsRef = useRef(components)
+  componentsRef.current = components
   const historyRef = useRef<HistorySnapshot[]>([])
   const documentRef = useRef<HistorySnapshot | null>(null)
   const [canUndo, setCanUndo] = useState(false)
@@ -115,8 +139,13 @@ export default function App() {
     setSelectedIds(previous.selectedIds)
     setEditingGroupId(previous.editingGroupId)
     setArtboardSelected(previous.artboardSelected)
-    setPlaceType(null)
+    setPlaceTool(null)
     setCanUndo(historyRef.current.length > 0)
+  }, [])
+
+  const updateLibrary = useCallback((next: CustomComponentDef[]) => {
+    setComponents(next)
+    persistLibrary(next)
   }, [])
 
   const updateElement = useCallback(
@@ -128,19 +157,39 @@ export default function App() {
   )
 
   const place = useCallback(
-    (type: PlaceType, x: number, y: number, artboardId: string) => {
+    (tool: PlaceTool, x: number, y: number, artboardId: string) => {
       recordHistory()
       setActiveArtboardId(artboardId)
       setArtboardSelected(false)
       setElements((prev) => {
         const boardEls = prev.filter((el) => el.artboardId === artboardId)
-        if (isComposedKind(type)) {
-          const created = createComposed(type, x, y, nextZ(boardEls), snapOn, artboardId)
+        const z0 = nextZ(boardEls)
+
+        if (isCustomPlace(tool)) {
+          const def = componentsRef.current.find((c) => c.id === tool.customId)
+          if (!def) return prev
+          const created = createFromParts(def.parts, {
+            name: def.name,
+            groupKind: 'custom',
+            cx: x,
+            cy: y,
+            startZ: z0,
+            snapOn,
+            artboardId,
+          })
           setSelectedIds(created.map((el) => el.id))
           setEditingGroupId(null)
           return [...prev, ...created]
         }
-        const el = createElement(type, x, y, nextZ(boardEls), snapOn, artboardId)
+
+        if (isComposedKind(tool)) {
+          const created = createComposed(tool, x, y, z0, snapOn, artboardId)
+          setSelectedIds(created.map((el) => el.id))
+          setEditingGroupId(null)
+          return [...prev, ...created]
+        }
+
+        const el = createElement(tool, x, y, z0, snapOn, artboardId)
         setSelectedIds([el.id])
         return [...prev, el]
       })
@@ -149,9 +198,9 @@ export default function App() {
   )
 
   const startPaletteDrag = useCallback(
-    (type: PlaceType, clientX: number, clientY: number) => {
+    (tool: PlaceTool, label: string, clientX: number, clientY: number) => {
       window.getSelection()?.removeAllRanges()
-      const state = { type, x: clientX, y: clientY }
+      const state = { tool, label, x: clientX, y: clientY }
       paletteDragRef.current = state
       setPaletteDrag({ ...state })
 
@@ -192,7 +241,7 @@ export default function App() {
         const worldY = (e.clientY - rect.top - pan.y) / zoom
         const boards = documentRef.current?.artboards || []
         const activeId = documentRef.current?.activeArtboardId || activeArtboardId
-        let target =
+        const target =
           boards.find(
             (ab) =>
               worldX >= ab.x &&
@@ -214,8 +263,8 @@ export default function App() {
           boards[0]
         if (!target) return
         const local = worldToLocal(target, { x: worldX, y: worldY })
-        place(drag.type, local.x, local.y, target.id)
-        setPlaceType(null)
+        place(drag.tool, local.x, local.y, target.id)
+        setPlaceTool(null)
         window.getSelection()?.removeAllRanges()
       }
 
@@ -225,6 +274,23 @@ export default function App() {
     },
     [pan.x, pan.y, zoom, place, activeArtboardId],
   )
+
+  const saveSelectionAsComponent = useCallback(() => {
+    const ids = expandSelectionForGroups(elements, selectedIds, editingGroupId)
+    const selected = elements.filter((el) => ids.includes(el.id))
+    const parts = selectionToParts(selected)
+    if (!parts) {
+      window.alert('Select elements on one artboard to save as a component.')
+      return
+    }
+    const suggested = nextComponentDefaultName(components)
+    const name = window.prompt('Component name', suggested)
+    if (name == null) return
+    const trimmed = name.trim()
+    if (!trimmed) return
+    updateLibrary(addComponent(components, parts, trimmed))
+    setSideTab('elements')
+  }, [elements, selectedIds, editingGroupId, components, updateLibrary])
 
   const onPreset = (id: string) => {
     recordHistory()
@@ -390,7 +456,7 @@ export default function App() {
         }
         setSelectedIds([])
         setArtboardSelected(false)
-        setPlaceType(null)
+        setPlaceTool(null)
         return
       }
 
@@ -519,12 +585,27 @@ export default function App() {
       setSelectedIds([])
       setArtboardSelected(false)
       setEditingGroupId(null)
-      setPlaceType(null)
+      setPlaceTool(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not open .wireframe file'
       window.alert(message)
     }
   }
+
+  const handleOpenGallery = async (file: File) => {
+    try {
+      const imported = await readLibraryFile(file)
+      updateLibrary(mergeLibraries(components, imported))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not open components file'
+      window.alert(message)
+    }
+  }
+
+  const selectedForSave = elements.filter((el) =>
+    expandSelectionForGroups(elements, selectedIds, editingGroupId).includes(el.id),
+  )
+  const canSaveComponent = canSaveSelection(selectedForSave)
 
   const scopeZ = (fn: (scoped: WireElement[]) => WireElement[]) => {
     const boardId =
@@ -561,9 +642,16 @@ export default function App() {
         <SidePanel
           tab={sideTab}
           onTab={setSideTab}
-          placeType={placeType}
-          onPlaceType={setPlaceType}
+          placeTool={placeTool}
+          onPlaceTool={setPlaceTool}
           onPaletteDragStart={startPaletteDrag}
+          components={components}
+          onSaveGallery={() => downloadLibrary(components)}
+          onOpenGallery={handleOpenGallery}
+          onRenameComponent={(id, name) => updateLibrary(renameComponent(components, id, name))}
+          onDeleteComponent={(id) => updateLibrary(removeComponent(components, id))}
+          onSaveAsComponent={saveSelectionAsComponent}
+          canSaveAsComponent={canSaveComponent}
           elements={activeElements}
           selectedIds={selectedIds}
           onSelect={(ids) => {
@@ -604,7 +692,7 @@ export default function App() {
             selectedIds={selectedIds}
             artboardSelected={artboardSelected}
             snapOn={snapOn}
-            placeType={placeType}
+            placeTool={placeTool}
             onSelect={setSelectedIds}
             onActiveArtboard={setActiveArtboardId}
             onArtboardSelected={setArtboardSelected}
@@ -627,9 +715,19 @@ export default function App() {
             onResizeGroup={(origins, oldBounds, newBounds) => {
               setElements((prev) => scaleElementsToBounds(prev, origins, oldBounds, newBounds))
             }}
+            onCornerRadiusChange={(id, cornerRadius) => {
+              setElements((prev) =>
+                prev.map((el) => (el.id === id ? { ...el, cornerRadius } : el)),
+              )
+            }}
+            onRotationChange={(id, rotation) => {
+              setElements((prev) =>
+                prev.map((el) => (el.id === id ? { ...el, rotation } : el)),
+              )
+            }}
             onEditStart={recordHistory}
             onPlace={place}
-            onClearPlace={() => setPlaceType(null)}
+            onClearPlace={() => setPlaceTool(null)}
             pan={pan}
             zoom={zoom}
             onPanChange={setPan}
@@ -646,7 +744,7 @@ export default function App() {
             className="palette-drag-ghost"
             style={{ left: paletteDrag.x + 12, top: paletteDrag.y + 12 }}
           >
-            {paletteDrag.type}
+            {paletteDrag.label}
           </div>
         )}
 
@@ -678,6 +776,8 @@ export default function App() {
           onUngroup={handleUngroup}
           onGroup={handleGroup}
           onRenameGroup={handleRenameGroup}
+          onSaveAsComponent={saveSelectionAsComponent}
+          canSaveAsComponent={canSaveComponent}
           canGroupSelection={canGroup(elements, selectedIds)}
           editingGroupId={editingGroupId}
           onEditGroup={setEditingGroupId}

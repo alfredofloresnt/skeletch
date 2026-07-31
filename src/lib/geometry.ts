@@ -65,7 +65,18 @@ export function lineAwareBox(el: BoxLike): Rect {
   }
 }
 
-export function pointInElement(px: number, py: number, el: BoxLike): boolean {
+type RotatableBox = BoxLike & { rotation?: number }
+
+export function pointInElement(px: number, py: number, el: RotatableBox): boolean {
+  const rot = el.rotation || 0
+  let x = px
+  let y = py
+  if (rot) {
+    const local = toElementLocal({ x: px, y: py }, el)
+    x = local.x
+    y = local.y
+  }
+
   const box = lineAwareBox(el)
   if (el.type === 'circle') {
     const cx = el.x + el.w / 2
@@ -73,8 +84,8 @@ export function pointInElement(px: number, py: number, el: BoxLike): boolean {
     const rx = el.w / 2
     const ry = el.h / 2
     if (rx <= 0 || ry <= 0) return false
-    const dx = (px - cx) / rx
-    const dy = (py - cy) / ry
+    const dx = (x - cx) / rx
+    const dy = (y - cy) / ry
     return dx * dx + dy * dy <= 1
   }
   if (el.type === 'triangle') {
@@ -87,12 +98,12 @@ export function pointInElement(px: number, py: number, el: BoxLike): boolean {
     const y3 = el.y + el.h
     const denom = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
     if (!denom) return false
-    const a = ((y2 - y3) * (px - x3) + (x3 - x2) * (py - y3)) / denom
-    const b = ((y3 - y1) * (px - x3) + (x1 - x3) * (py - y3)) / denom
+    const a = ((y2 - y3) * (x - x3) + (x3 - x2) * (y - y3)) / denom
+    const b = ((y3 - y1) * (x - x3) + (x1 - x3) * (y - y3)) / denom
     const c = 1 - a - b
     return a >= 0 && b >= 0 && c >= 0
   }
-  return px >= box.x && px <= box.x + box.w && py >= box.y && py <= box.y + box.h
+  return x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h
 }
 
 type ResizeTarget = Pick<WireElement, 'type' | 'x' | 'y' | 'w' | 'h'>
@@ -164,4 +175,154 @@ export function screenToWorld(
 
 export function sortByZ<T extends { z: number }>(elements: T[]): T[] {
   return [...elements].sort((a, b) => a.z - b.z)
+}
+
+export type CornerHandle = 'nw' | 'ne' | 'se' | 'sw'
+
+/** Uniform corner radius from pointer position relative to a corner. */
+export function cornerRadiusFromPointer(
+  local: Point,
+  bounds: Rect,
+  corner: CornerHandle,
+): number {
+  const maxR = Math.max(0, Math.min(bounds.w, bounds.h) / 2)
+  let dx = 0
+  let dy = 0
+  switch (corner) {
+    case 'nw':
+      dx = local.x - bounds.x
+      dy = local.y - bounds.y
+      break
+    case 'ne':
+      dx = bounds.x + bounds.w - local.x
+      dy = local.y - bounds.y
+      break
+    case 'se':
+      dx = bounds.x + bounds.w - local.x
+      dy = bounds.y + bounds.h - local.y
+      break
+    case 'sw':
+      dx = local.x - bounds.x
+      dy = bounds.y + bounds.h - local.y
+      break
+  }
+  return clamp(Math.min(dx, dy), 0, maxR)
+}
+
+export function normalizeDegrees(deg: number): number {
+  let d = deg % 360
+  if (d > 180) d -= 360
+  if (d <= -180) d += 360
+  return d
+}
+
+export function degToRad(deg: number): number {
+  return (deg * Math.PI) / 180
+}
+
+export function elementCenter(el: Pick<WireElement, 'type' | 'x' | 'y' | 'w' | 'h'>): Point {
+  if (el.type === 'line') {
+    return { x: el.x + el.w / 2, y: el.y + el.h / 2 }
+  }
+  return { x: el.x + el.w / 2, y: el.y + el.h / 2 }
+}
+
+export function rotatePoint(p: Point, center: Point, deg: number): Point {
+  if (!deg) return p
+  const rad = degToRad(deg)
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const dx = p.x - center.x
+  const dy = p.y - center.y
+  return {
+    x: center.x + dx * cos - dy * sin,
+    y: center.y + dx * sin + dy * cos,
+  }
+}
+
+/** Map artboard-local point into the element's unrotated local frame. */
+export function toElementLocal(
+  p: Point,
+  el: Pick<WireElement, 'type' | 'x' | 'y' | 'w' | 'h' | 'rotation'>,
+): Point {
+  const c = elementCenter(el)
+  return rotatePoint(p, c, -(el.rotation || 0))
+}
+
+export function angleOfPoint(center: Point, p: Point): number {
+  return (Math.atan2(p.y - center.y, p.x - center.x) * 180) / Math.PI
+}
+
+/** Axis-aligned bounds of a possibly rotated element (artboard-local). */
+export function rotatedAabb(el: Pick<WireElement, 'type' | 'x' | 'y' | 'w' | 'h' | 'rotation' | 'strokeWidth'>): Rect {
+  const box = lineAwareBox(el)
+  const rot = el.rotation || 0
+  if (!rot) return box
+  const c = { x: box.x + box.w / 2, y: box.y + box.h / 2 }
+  const corners = [
+    { x: box.x, y: box.y },
+    { x: box.x + box.w, y: box.y },
+    { x: box.x + box.w, y: box.y + box.h },
+    { x: box.x, y: box.y + box.h },
+  ].map((p) => rotatePoint(p, c, rot))
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const p of corners) {
+    minX = Math.min(minX, p.x)
+    minY = Math.min(minY, p.y)
+    maxX = Math.max(maxX, p.x)
+    maxY = Math.max(maxY, p.y)
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+}
+
+const RESIZE_CURSORS = ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'] as const
+
+/** CSS resize cursor remapped by element rotation. */
+export function resizeCursorForHandle(handle: ResizeHandle, rotationDeg = 0): string {
+  const base: Record<ResizeHandle, number> = {
+    e: 0,
+    se: 45,
+    s: 90,
+    sw: 135,
+    w: 180,
+    nw: 225,
+    n: 270,
+    ne: 315,
+  }
+  const angle = (((base[handle] + rotationDeg) % 180) + 180) % 180
+  const idx = Math.round(angle / 45) % 4
+  return RESIZE_CURSORS[idx]
+}
+
+/** Curved-arrow rotate cursor (SVG data URL), oriented per handle + rotation. */
+export function rotateCursorForHandle(handle: ResizeHandle, rotationDeg = 0): string {
+  const base: Record<ResizeHandle, number> = {
+    e: 0,
+    se: 45,
+    s: 90,
+    sw: 135,
+    w: 180,
+    nw: 225,
+    n: 270,
+    ne: 315,
+  }
+  const angle = Math.round((base[handle] + rotationDeg) / 45) * 45
+  return rotateCursorDataUrl(angle)
+}
+
+function rotateCursorDataUrl(angleDeg: number): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <g fill="none" stroke="#1f6feb" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" transform="rotate(${angleDeg} 16 16)">
+    <path d="M10 14a6 6 0 1 1 2.2 5.2"/>
+    <path d="M10 14V9.5M10 14h4.5"/>
+  </g>
+</svg>`
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 16 16, crosshair`
+}
+
+export function isCornerHandle(handle: ResizeHandle): handle is CornerHandle {
+  return handle === 'nw' || handle === 'ne' || handle === 'se' || handle === 'sw'
 }

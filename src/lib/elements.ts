@@ -210,30 +210,41 @@ export function isComposedKind(type: string): type is ComposedKind {
   return COMPOSED_KINDS.includes(type as ComposedKind)
 }
 
+/** Preview atoms for palette thumbnails (light strokes on dark panel). */
+export function getPartsPreview(parts: LayoutPart[], key = 'preview'): WireElement[] {
+  const els: WireElement[] = parts.map((part, i) => ({
+    id: `${key}-${i}`,
+    ...part,
+    z: i + 1,
+    artboardId: 'preview',
+    groupId: null,
+  }))
+  const bounds = getBounds(els)
+  if (!bounds) return els
+  return els.map((el) => ({
+    ...el,
+    x: el.x - bounds.x,
+    y: el.y - bounds.y,
+    stroke: el.stroke && el.stroke !== 'transparent' ? '#ffffff' : el.stroke,
+    fill: el.type === 'text' ? '#ffffff' : el.fill,
+  }))
+}
+
 /** Static preview elements for the palette (no ids/name counters). */
 export function getPalettePreview(type: PlaceType): WireElement[] {
-  let parts: WireElement[]
   if (isComposedKind(type)) {
-    parts = COMPOSED_LAYOUTS[type]().map((part, i) => ({
-      id: `preview-${type}-${i}`,
-      ...part,
-      z: i + 1,
-      artboardId: 'preview',
-      groupId: null,
-    }))
-  } else {
-    const d = DEFAULTS[type]
-    if (!d) return []
-    parts = [
+    return getPartsPreview(COMPOSED_LAYOUTS[type](), `preview-${type}`)
+  }
+  const d = DEFAULTS[type]
+  if (!d) return []
+  return getPartsPreview(
+    [
       {
-        id: `preview-${type}`,
         type,
         x: 0,
         y: 0,
         w: d.w,
         h: d.h,
-        z: 1,
-        artboardId: 'preview',
         fill: d.fill,
         stroke: d.stroke,
         strokeWidth: d.strokeWidth,
@@ -243,21 +254,10 @@ export function getPalettePreview(type: PlaceType): WireElement[] {
         fontSize: d.fontSize,
         textAlign: d.textAlign || 'left',
         verticalAlign: d.verticalAlign || 'top',
-        groupId: null,
       },
-    ]
-  }
-
-  const bounds = getBounds(parts)
-  if (!bounds) return parts
-  // Light strokes/text for dark panel thumbnails.
-  return parts.map((el) => ({
-    ...el,
-    x: el.x - bounds.x,
-    y: el.y - bounds.y,
-    stroke: el.stroke && el.stroke !== 'transparent' ? '#ffffff' : el.stroke,
-    fill: el.type === 'text' ? '#ffffff' : el.fill,
-  }))
+    ],
+    `preview-${type}`,
+  )
 }
 
 export function createElement(
@@ -294,23 +294,32 @@ export function createElement(
   }
 }
 
-/** Build grouped atomic elements for a composed widget, centered on (cx, cy). */
-export function createComposed(
-  kind: ComposedKind,
-  cx: number,
-  cy: number,
-  startZ: number,
-  snapOn: boolean,
-  artboardId: string,
+/** Build a grouped instance from relative parts, centered on (cx, cy). */
+export function createFromParts(
+  parts: LayoutPart[],
+  {
+    name,
+    groupKind,
+    cx,
+    cy,
+    startZ,
+    snapOn,
+    artboardId,
+  }: {
+    name: string
+    groupKind: string
+    cx: number
+    cy: number
+    startZ: number
+    snapOn: boolean
+    artboardId: string
+  },
 ): WireElement[] {
-  const layout = COMPOSED_LAYOUTS[kind]
-  if (!layout) return []
-
-  const parts = layout()
+  if (!parts.length) return []
   const bounds = getBounds(parts)
   if (!bounds) return []
   const groupId = uid('grp')
-  const groupName = nextName(kind)
+  const groupName = name
   const ox = snap(cx - bounds.w / 2, snapOn)
   const oy = snap(cy - bounds.h / 2, snapOn)
 
@@ -324,8 +333,30 @@ export function createComposed(
     artboardId,
     groupId,
     groupName,
-    groupKind: kind,
+    groupKind,
   }))
+}
+
+/** Build grouped atomic elements for a composed widget, centered on (cx, cy). */
+export function createComposed(
+  kind: ComposedKind,
+  cx: number,
+  cy: number,
+  startZ: number,
+  snapOn: boolean,
+  artboardId: string,
+): WireElement[] {
+  const layout = COMPOSED_LAYOUTS[kind]
+  if (!layout) return []
+  return createFromParts(layout(), {
+    name: nextName(kind),
+    groupKind: kind,
+    cx,
+    cy,
+    startZ,
+    snapOn,
+    artboardId,
+  })
 }
 
 /** Run a transform on one artboard's elements; leave others untouched. */

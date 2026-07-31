@@ -54,6 +54,7 @@ function sanitizeElement(el: WireElement, fallbackArtboardId?: string): WireElem
     w: el.w,
     h: el.h,
     z: el.z,
+    rotation: Number(el.rotation) || 0,
     artboardId: el.artboardId || fallbackArtboardId || '',
     fill: el.fill,
     stroke: el.stroke,

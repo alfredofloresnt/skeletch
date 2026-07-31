@@ -91,6 +91,8 @@ type InspectorProps = {
   onUngroup: (groupId: string) => void
   onGroup: (ids?: string[]) => void
   onRenameGroup?: (groupId: string, name: string) => void
+  onSaveAsComponent?: () => void
+  canSaveAsComponent?: boolean
   canGroupSelection?: boolean
   editingGroupId: string | null
   onEditGroup: (groupId: string | null) => void
@@ -108,6 +110,8 @@ export default function Inspector({
   onUngroup,
   onGroup,
   onRenameGroup,
+  onSaveAsComponent,
+  canSaveAsComponent,
   canGroupSelection,
   editingGroupId,
   onEditGroup,
@@ -157,6 +161,15 @@ export default function Inspector({
                 Ungroup
               </button>
             </div>
+            <button
+              type="button"
+              className="btn-ghost"
+              style={{ marginTop: '0.5rem', width: '100%' }}
+              disabled={!canSaveAsComponent}
+              onClick={onSaveAsComponent}
+            >
+              Save as component
+            </button>
           </div>
         ) : (
           <div className="inspector-section">
@@ -168,6 +181,15 @@ export default function Inspector({
               onClick={() => onGroup?.(selectedIds)}
             >
               Group selection
+            </button>
+            <button
+              type="button"
+              className="btn-ghost"
+              style={{ marginTop: '0.5rem', width: '100%' }}
+              disabled={!canSaveAsComponent}
+              onClick={onSaveAsComponent}
+            >
+              Save as component
             </button>
           </div>
         )}
@@ -244,6 +266,18 @@ export default function Inspector({
       )}
 
       <div className="inspector-section">
+        <label className="field-label">Component</label>
+        <button
+          type="button"
+          className="btn-ghost"
+          disabled={!canSaveAsComponent}
+          onClick={onSaveAsComponent}
+        >
+          Save as component
+        </button>
+      </div>
+
+      <div className="inspector-section">
         <label className="field-label">Position</label>
         <div className="field-row">
           <label>
@@ -281,6 +315,29 @@ export default function Inspector({
               onChange={(e) => set({ h: Number(e.target.value) })}
             />
           </label>
+        </div>
+        <label className="field-label" style={{ marginTop: '0.65rem' }}>
+          Rotation
+        </label>
+        <div className="field-row">
+          <label>
+            °
+            <input
+              type="number"
+              step={1}
+              value={Math.round(el.rotation || 0)}
+              onChange={(e) => set({ rotation: Number(e.target.value) || 0 })}
+              aria-label="Rotation degrees"
+            />
+          </label>
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => set({ rotation: 0 })}
+            title="Reset rotation"
+          >
+            Reset
+          </button>
         </div>
       </div>
 
