@@ -30,6 +30,7 @@ export function selectionToParts(selected: WireElement[]): LayoutPart[] | null {
       h: el.h,
       rotation: el.rotation || 0,
       fill: el.fill,
+      fillImage: el.fillImage ?? null,
       stroke: el.stroke,
       strokeWidth: el.strokeWidth,
       opacity: el.opacity,
@@ -59,6 +60,10 @@ function sanitizePart(part: LayoutPart): LayoutPart {
     h: Number(part.h) || 0,
     rotation: Number(part.rotation) || 0,
     fill: part.fill,
+    fillImage:
+      typeof part.fillImage === 'string' && part.fillImage.startsWith('data:image/')
+        ? part.fillImage
+        : null,
     stroke: part.stroke,
     strokeWidth: part.strokeWidth,
     opacity: part.opacity,

@@ -1,5 +1,25 @@
 import { DEFAULTS } from './constants'
+import { drawImageContain, loadHtmlImage } from './fillImage'
 import type { Artboard, WireElement } from './types'
+
+type ImageCache = Map<string, HTMLImageElement>
+
+function paintFillImage(
+  ctx: CanvasRenderingContext2D,
+  el: WireElement,
+  images: ImageCache,
+  clip: () => void,
+): void {
+  const src = el.fillImage
+  if (!src) return
+  const img = images.get(src)
+  if (!img) return
+  ctx.save()
+  clip()
+  ctx.clip()
+  drawImageContain(ctx, img, el.x, el.y, el.w, el.h)
+  ctx.restore()
+}
 
 function roundRect(
   ctx: CanvasRenderingContext2D,
@@ -102,6 +122,7 @@ function paintBorderBoxShape(
   ctx: CanvasRenderingContext2D,
   el: WireElement,
   shape: 'circle' | 'rect',
+  images: ImageCache,
 ): void {
   const sw = el.strokeWidth || 0
   const stroke = el.stroke || '#1a1a1a'
@@ -112,10 +133,14 @@ function paintBorderBoxShape(
     const cy = el.y + el.h / 2
     ctx.beginPath()
     ctx.ellipse(cx, cy, el.w / 2, el.h / 2, 0, 0, Math.PI * 2)
-    if (fill && fill !== 'transparent') {
+    if (fill && fill !== 'transparent' && !el.fillImage) {
       ctx.fillStyle = fill
       ctx.fill()
     }
+    paintFillImage(ctx, el, images, () => {
+      ctx.beginPath()
+      ctx.ellipse(cx, cy, el.w / 2, el.h / 2, 0, 0, Math.PI * 2)
+    })
     if (sw > 0) {
       const rx = Math.max(0, el.w / 2 - sw / 2)
       const ry = Math.max(0, el.h / 2 - sw / 2)
@@ -128,17 +153,19 @@ function paintBorderBoxShape(
     return
   }
 
-  roundRect(ctx, el.x, el.y, el.w, el.h, el.cornerRadius || 0)
-  if (fill && fill !== 'transparent') {
+  const r = el.cornerRadius || 0
+  roundRect(ctx, el.x, el.y, el.w, el.h, r)
+  if (fill && fill !== 'transparent' && !el.fillImage) {
     ctx.fillStyle = fill
     ctx.fill()
   }
+  paintFillImage(ctx, el, images, () => roundRect(ctx, el.x, el.y, el.w, el.h, r))
   if (sw > 0) {
     const inset = sw / 2
     const iw = el.w - sw
     const ih = el.h - sw
     if (iw > 0 && ih > 0) {
-      const ir = Math.max(0, (el.cornerRadius || 0) - inset)
+      const ir = Math.max(0, r - inset)
       roundRect(ctx, el.x + inset, el.y + inset, iw, ih, ir)
       ctx.strokeStyle = stroke
       ctx.lineWidth = sw
@@ -148,15 +175,19 @@ function paintBorderBoxShape(
 }
 
 /** Match WireElement image: fill + radius, then ImagePlaceholder SVG (inset ~1%). */
-function paintImage(ctx: CanvasRenderingContext2D, el: WireElement): void {
+function paintImage(ctx: CanvasRenderingContext2D, el: WireElement, images: ImageCache): void {
   const d = DEFAULTS.image
   const r = el.cornerRadius || 0
   const fill = el.fill ?? d.fill
-  if (fill && fill !== 'transparent') {
+  if (fill && fill !== 'transparent' && !el.fillImage) {
     roundRect(ctx, el.x, el.y, el.w, el.h, r)
     ctx.fillStyle = fill
     ctx.fill()
   }
+
+  paintFillImage(ctx, el, images, () => roundRect(ctx, el.x, el.y, el.w, el.h, r))
+
+  if (el.fillImage) return
 
   const sw = el.strokeWidth ?? d.strokeWidth
   const stroke = el.stroke ?? d.stroke
@@ -182,7 +213,7 @@ function paintImage(ctx: CanvasRenderingContext2D, el: WireElement): void {
   ctx.restore()
 }
 
-function paintShape(ctx: CanvasRenderingContext2D, el: WireElement): void {
+function paintShape(ctx: CanvasRenderingContext2D, el: WireElement, images: ImageCache): void {
   ctx.save()
   ctx.globalAlpha = el.opacity ?? 1
 
@@ -220,7 +251,7 @@ function paintShape(ctx: CanvasRenderingContext2D, el: WireElement): void {
   }
 
   if (el.type === 'circle') {
-    paintBorderBoxShape(ctx, el, 'circle')
+    paintBorderBoxShape(ctx, el, 'circle', images)
     ctx.restore()
     return
   }
@@ -235,16 +266,21 @@ function paintShape(ctx: CanvasRenderingContext2D, el: WireElement): void {
     const y2 = el.y + el.h
     const x3 = el.x + el.w
     const y3 = el.y + el.h
-    ctx.beginPath()
-    ctx.moveTo(x1, y1)
-    ctx.lineTo(x2, y2)
-    ctx.lineTo(x3, y3)
-    ctx.closePath()
-    if (fill && fill !== 'transparent') {
+    const trianglePath = () => {
+      ctx.beginPath()
+      ctx.moveTo(x1, y1)
+      ctx.lineTo(x2, y2)
+      ctx.lineTo(x3, y3)
+      ctx.closePath()
+    }
+    trianglePath()
+    if (fill && fill !== 'transparent' && !el.fillImage) {
       ctx.fillStyle = fill
       ctx.fill()
     }
+    paintFillImage(ctx, el, images, trianglePath)
     if (sw > 0) {
+      trianglePath()
       ctx.strokeStyle = stroke
       ctx.lineWidth = sw
       ctx.lineJoin = 'miter'
@@ -255,12 +291,12 @@ function paintShape(ctx: CanvasRenderingContext2D, el: WireElement): void {
   }
 
   if (el.type === 'image') {
-    paintImage(ctx, el)
+    paintImage(ctx, el, images)
     ctx.restore()
     return
   }
 
-  paintBorderBoxShape(ctx, el, 'rect')
+  paintBorderBoxShape(ctx, el, 'rect', images)
   ctx.restore()
 }
 
@@ -278,8 +314,20 @@ export async function exportArtboardPng(
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
+  const images: ImageCache = new Map()
+  await Promise.all(
+    elements.map(async (el) => {
+      if (!el.fillImage || images.has(el.fillImage)) return
+      try {
+        images.set(el.fillImage, await loadHtmlImage(el.fillImage))
+      } catch {
+        /* skip broken image fills */
+      }
+    }),
+  )
+
   const sorted = [...elements].sort((a, b) => a.z - b.z)
-  for (const el of sorted) paintShape(ctx, el)
+  for (const el of sorted) paintShape(ctx, el, images)
 
   const slug = (artboard.name || 'artboard')
     .toLowerCase()

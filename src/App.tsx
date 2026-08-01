@@ -42,6 +42,7 @@ import {
   ungroup,
 } from './lib/elements'
 import { exportArtboardPng } from './lib/exportPng'
+import { canAcceptFillImage, readClipboardImage } from './lib/fillImage'
 import { FRAME_PRESETS, MAX_ZOOM, MIN_ZOOM } from './lib/constants'
 import {
   applyRotationAroundCenter,
@@ -575,26 +576,6 @@ export default function App() {
         return
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v' && clipboardRef.current.length) {
-        e.preventDefault()
-        recordHistory()
-        const clipIds = clipboardRef.current.map((el) => el.id)
-        const { elements: copies, ids } = duplicateElements(clipboardRef.current, clipIds, 16, 16)
-        const boardEls = elementsOnArtboard(elements, activeArtboardId)
-        const z0 = nextZ(boardEls)
-        const created = copies.map((el, i) => ({
-          ...el,
-          z: z0 + i,
-          artboardId: activeArtboardId,
-        }))
-        setElements((prev) => [...prev, ...created])
-        setSelectedIds(ids)
-        setArtboardSelected(false)
-        setEditingGroupId(null)
-        clipboardRef.current = created.map((el) => ({ ...el }))
-        return
-      }
-
       if (selectedIds.length && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault()
         recordHistory()
@@ -621,6 +602,64 @@ export default function App() {
     artboards,
     activeArtboardId,
   ])
+
+  useEffect(() => {
+    const onPaste = async (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
+        return
+      }
+      if (editingTextId) return
+
+      const fillableIds = selectedIds.filter((id) => {
+        const el = elements.find((item) => item.id === id)
+        return el ? canAcceptFillImage(el) : false
+      })
+      const data = e.clipboardData
+      const hasClipboardImage = Boolean(
+        data &&
+          ([...data.items].some((item) => item.type.startsWith('image/')) ||
+            [...data.files].some((file) => file.type.startsWith('image/'))),
+      )
+
+      if (fillableIds.length && hasClipboardImage) {
+        e.preventDefault()
+        const dataUrl = await readClipboardImage(data)
+        if (!dataUrl) return
+        recordHistory()
+        setElements((prev) =>
+          prev.map((el) =>
+            fillableIds.includes(el.id)
+              ? { ...el, fillImage: dataUrl, fillVar: null }
+              : el,
+          ),
+        )
+        return
+      }
+
+      if (!clipboardRef.current.length) return
+      e.preventDefault()
+      recordHistory()
+      const clipIds = clipboardRef.current.map((el) => el.id)
+      const { elements: copies, ids } = duplicateElements(clipboardRef.current, clipIds, 16, 16)
+      const boardEls = elementsOnArtboard(elements, activeArtboardId)
+      const z0 = nextZ(boardEls)
+      const created = copies.map((el, i) => ({
+        ...el,
+        z: z0 + i,
+        artboardId: activeArtboardId,
+      }))
+      setElements((prev) => [...prev, ...created])
+      setSelectedIds(ids)
+      setArtboardSelected(false)
+      setEditingGroupId(null)
+      clipboardRef.current = created.map((el) => ({ ...el }))
+    }
+
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [selectedIds, elements, editingTextId, recordHistory, activeArtboardId])
 
   const handleUngroup = (groupId: string) => {
     recordHistory()

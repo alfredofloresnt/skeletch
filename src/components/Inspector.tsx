@@ -452,9 +452,18 @@ export default function Inspector({
               variableId={el.fillVar}
               variables={variables}
               allowTransparent
-              onChange={(fill, fillVar) => set({ fill, fillVar })}
+              onChange={(fill, fillVar) => set({ fill, fillVar, fillImage: null })}
               onAddVariable={onAddVariable}
             />
+            {el.fillImage && (
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => set({ fillImage: null })}
+              >
+                Clear image fill
+              </button>
+            )}
           </>
         )}
         {el.type === 'text' && (

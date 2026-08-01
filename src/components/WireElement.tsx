@@ -23,6 +23,17 @@ function rotationStyle(rotation?: number): CSSProperties {
   }
 }
 
+function fillImageStyle(src?: string | null): CSSProperties {
+  if (!src) return {}
+  return {
+    backgroundImage: `url(${JSON.stringify(src)})`,
+    backgroundSize: 'contain',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+    backgroundColor: 'transparent',
+  }
+}
+
 function ImagePlaceholder({
   stroke,
   strokeWidth,
@@ -261,8 +272,14 @@ export default function WireElement({
           ...style,
           borderRadius: '50%',
           border: sw > 0 ? `${sw}px solid ${el.stroke}` : 'none',
-          background: el.fill === 'transparent' ? 'transparent' : el.fill,
+          background: el.fillImage
+            ? undefined
+            : el.fill === 'transparent'
+              ? 'transparent'
+              : el.fill,
+          ...fillImageStyle(el.fillImage),
           boxSizing: 'border-box',
+          overflow: 'hidden',
         }}
         data-id={el.id}
         onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
@@ -280,10 +297,20 @@ export default function WireElement({
         data-id={el.id}
         onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
       >
+        {el.fillImage ? (
+          <div
+            className="wire-el-fill-image"
+            style={{
+              ...fillImageStyle(el.fillImage),
+              clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)',
+            }}
+            aria-hidden
+          />
+        ) : null}
         <svg className="el-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
           <polygon
             points="50,3 97,97 3,97"
-            fill={fill}
+            fill={el.fillImage ? 'none' : fill}
             stroke={sw > 0 ? el.stroke : 'none'}
             strokeWidth={sw}
             strokeLinejoin="miter"
@@ -301,14 +328,19 @@ export default function WireElement({
         className={`wire-el wire-el--image${selected ? ' is-selected' : ''}`}
         style={{
           ...style,
-          background: fill === 'transparent' ? 'transparent' : fill,
+          background: el.fillImage
+            ? undefined
+            : fill === 'transparent'
+              ? 'transparent'
+              : fill,
+          ...fillImageStyle(el.fillImage),
           borderRadius: el.cornerRadius,
           overflow: 'hidden',
         }}
         data-id={el.id}
         onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
       >
-        <ImagePlaceholder stroke={el.stroke} strokeWidth={el.strokeWidth} />
+        {!el.fillImage && <ImagePlaceholder stroke={el.stroke} strokeWidth={el.strokeWidth} />}
       </div>
     )
   }
@@ -321,9 +353,15 @@ export default function WireElement({
       style={{
         ...style,
         border: sw > 0 ? `${sw}px solid ${el.stroke}` : 'none',
-        background: el.fill === 'transparent' ? 'transparent' : el.fill,
+        background: el.fillImage
+          ? undefined
+          : el.fill === 'transparent'
+            ? 'transparent'
+            : el.fill,
+        ...fillImageStyle(el.fillImage),
         borderRadius: el.cornerRadius,
         boxSizing: 'border-box',
+        overflow: 'hidden',
       }}
       data-id={el.id}
       onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}

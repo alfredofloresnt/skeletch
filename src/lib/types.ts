@@ -78,6 +78,8 @@ export interface LayoutPart {
   /** Degrees, clockwise. */
   rotation?: number
   fill?: string
+  /** Pasted/uploaded image data URL used as fill (object-fit: contain). */
+  fillImage?: string | null
   stroke?: string
   strokeWidth?: number
   opacity?: number

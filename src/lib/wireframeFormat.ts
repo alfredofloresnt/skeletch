@@ -77,6 +77,9 @@ function sanitizeElement(el: WireElement, fallbackArtboardId?: string): WireElem
     rotation: Number(el.rotation) || 0,
     artboardId: el.artboardId || fallbackArtboardId || '',
     fill: el.fill,
+    fillImage: typeof el.fillImage === 'string' && el.fillImage.startsWith('data:image/')
+      ? el.fillImage
+      : null,
     stroke: el.stroke,
     strokeWidth: el.strokeWidth,
     opacity: el.opacity,
