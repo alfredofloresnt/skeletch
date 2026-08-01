@@ -1,7 +1,6 @@
 import { getBounds, uid } from './geometry'
 import type {
   AtomicType,
-  ComponentLibrary,
   CustomComponentDef,
   LayoutPart,
   TextAlign,
@@ -9,20 +8,7 @@ import type {
   WireElement,
 } from './types'
 
-export const COMPONENT_LIBRARY_VERSION = 1
-export const COMPONENT_LIBRARY_FORMAT = 'skeletch-components' as const
-export const COMPONENT_LIBRARY_KEY = 'skeletch.componentLibrary'
-export const COMPONENT_LIBRARY_MIME = 'application/x-skeletch-components+json'
-
 const ATOMIC: AtomicType[] = ['rect', 'circle', 'triangle', 'line', 'text', 'image']
-
-export function emptyLibrary(): ComponentLibrary {
-  return {
-    format: COMPONENT_LIBRARY_FORMAT,
-    version: COMPONENT_LIBRARY_VERSION,
-    components: [],
-  }
-}
 
 /** `selected` should already be expanded for groups (full atom list). */
 export function selectionToParts(selected: WireElement[]): LayoutPart[] | null {
@@ -101,57 +87,12 @@ function sanitizeComponent(raw: Partial<CustomComponentDef>): CustomComponentDef
   }
 }
 
-export function parseLibrary(raw: string | unknown): ComponentLibrary {
-  const data = (typeof raw === 'string' ? JSON.parse(raw) : raw) as Partial<ComponentLibrary>
-  if (!data || data.format !== COMPONENT_LIBRARY_FORMAT) {
-    throw new Error('Not a valid Skeletch components file')
-  }
-  if (typeof data.version !== 'number' || data.version > COMPONENT_LIBRARY_VERSION) {
-    throw new Error(`Unsupported components version: ${data.version}`)
-  }
-  if (!Array.isArray(data.components)) {
-    throw new Error('Missing components array')
-  }
-  const components = data.components
-    .map((c) => sanitizeComponent(c))
+/** Sanitize components embedded in a .wireframe document. */
+export function sanitizeComponents(raw: unknown): CustomComponentDef[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((c) => sanitizeComponent(c as Partial<CustomComponentDef>))
     .filter((c): c is CustomComponentDef => Boolean(c))
-  return {
-    format: COMPONENT_LIBRARY_FORMAT,
-    version: COMPONENT_LIBRARY_VERSION,
-    components,
-  }
-}
-
-export function serializeLibrary(components: CustomComponentDef[]): ComponentLibrary {
-  return {
-    format: COMPONENT_LIBRARY_FORMAT,
-    version: COMPONENT_LIBRARY_VERSION,
-    components: components.map((c) => ({
-      id: c.id,
-      name: c.name,
-      parts: c.parts.map((p) => sanitizePart(p)),
-      createdAt: c.createdAt,
-      updatedAt: c.updatedAt,
-    })),
-  }
-}
-
-export function loadLibrary(): CustomComponentDef[] {
-  try {
-    const raw = localStorage.getItem(COMPONENT_LIBRARY_KEY)
-    if (!raw) return []
-    return parseLibrary(raw).components
-  } catch {
-    return []
-  }
-}
-
-export function persistLibrary(components: CustomComponentDef[]): void {
-  try {
-    localStorage.setItem(COMPONENT_LIBRARY_KEY, JSON.stringify(serializeLibrary(components)))
-  } catch {
-    /* quota / private mode */
-  }
 }
 
 export function addComponent(
@@ -189,44 +130,6 @@ export function renameComponent(
       ? { ...c, name: trimmed, updatedAt: new Date().toISOString() }
       : c,
   )
-}
-
-/** Imported ids overwrite local ones; other locals kept. */
-export function mergeLibraries(
-  local: CustomComponentDef[],
-  imported: CustomComponentDef[],
-): CustomComponentDef[] {
-  const byId = new Map(local.map((c) => [c.id, c]))
-  for (const c of imported) byId.set(c.id, c)
-  return [...byId.values()]
-}
-
-export function downloadLibrary(components: CustomComponentDef[], filename?: string): void {
-  const doc = serializeLibrary(components)
-  const json = JSON.stringify(doc, null, 2)
-  const blob = new Blob([json], { type: COMPONENT_LIBRARY_MIME })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  const stamp = new Date().toISOString().slice(0, 10)
-  link.download = filename || `skeletch-components-${stamp}.components.json`
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
-export function readLibraryFile(file: File): Promise<CustomComponentDef[]> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      try {
-        resolve(parseLibrary(String(reader.result)).components)
-      } catch (err) {
-        reject(err)
-      }
-    }
-    reader.onerror = () => reject(new Error('Failed to read file'))
-    reader.readAsText(file)
-  })
 }
 
 export function nextComponentDefaultName(components: CustomComponentDef[]): string {

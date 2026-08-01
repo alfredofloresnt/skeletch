@@ -7,7 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
-import { COMPOSED_TYPES, ELEMENT_TYPES } from '../lib/constants'
+import { COMPOSED_TYPES, ELEMENT_TYPES, FRAME_PRESETS } from '../lib/constants'
 import {
   buildLayerTree,
   canGroup,
@@ -17,6 +17,7 @@ import {
 } from '../lib/elements'
 import { getBounds } from '../lib/geometry'
 import type {
+  Artboard,
   CustomComponentDef,
   DesignVariable,
   LayoutPart,
@@ -32,6 +33,7 @@ import {
 } from '../lib/variables'
 import ActionMenu from './ActionMenu'
 import ColorPicker from './ColorPicker'
+import Tooltip from './Tooltip'
 import WireElement from './WireElement'
 
 const PREVIEW_W = 72
@@ -143,19 +145,147 @@ function PaletteButton({
   )
 }
 
-export type SideTab = 'elements' | 'layers' | 'variables'
+function IconRect() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <rect x="5" y="6" width="14" height="12" fill="none" stroke="currentColor" strokeWidth="1.75" />
+    </svg>
+  )
+}
+
+function IconCircle() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="1.75" />
+    </svg>
+  )
+}
+
+function IconTriangle() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <path
+        d="M12 5.5 L19.5 18.5 H4.5 Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="miter"
+      />
+    </svg>
+  )
+}
+
+function IconLine() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <line x1="6" y1="18" x2="18" y2="6" stroke="currentColor" strokeWidth="1.75" />
+    </svg>
+  )
+}
+
+function IconText() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <path
+        d="M7 7h10M12 7v11"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="square"
+      />
+    </svg>
+  )
+}
+
+function IconComponents() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <rect x="4" y="4" width="7" height="7" fill="none" stroke="currentColor" strokeWidth="1.75" />
+      <rect x="13" y="4" width="7" height="7" fill="none" stroke="currentColor" strokeWidth="1.75" />
+      <rect x="4" y="13" width="7" height="7" fill="none" stroke="currentColor" strokeWidth="1.75" />
+      <rect x="13" y="13" width="7" height="7" fill="none" stroke="currentColor" strokeWidth="1.75" />
+    </svg>
+  )
+}
+
+function IconDocument() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <path
+        d="M7 3.5h7l4 4V20.5H7z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="miter"
+      />
+      <path d="M14 3.5v4h4" fill="none" stroke="currentColor" strokeWidth="1.75" />
+    </svg>
+  )
+}
+
+function IconArtboards() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <rect x="5" y="4" width="11" height="13" fill="none" stroke="currentColor" strokeWidth="1.75" />
+      <rect x="9" y="7" width="11" height="13" fill="none" stroke="currentColor" strokeWidth="1.75" />
+    </svg>
+  )
+}
+
+function IconLayers() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <path
+        d="M12 4.5 L20 9 L12 13.5 L4 9 Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="miter"
+      />
+      <path
+        d="M4 12.5 L12 17 L20 12.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="miter"
+      />
+      <path
+        d="M4 16 L12 20.5 L20 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="miter"
+      />
+    </svg>
+  )
+}
+
+export type SideTab = 'components' | 'document' | 'artboards' | 'layers'
+
+const SHAPE_ICONS: Record<string, () => ReactNode> = {
+  rect: IconRect,
+  circle: IconCircle,
+  triangle: IconTriangle,
+  line: IconLine,
+  text: IconText,
+}
+
+const PANEL_META: Record<SideTab, { label: string; icon: () => ReactNode }> = {
+  components: { label: 'Components', icon: IconComponents },
+  document: { label: 'Document', icon: IconDocument },
+  artboards: { label: 'Artboards', icon: IconArtboards },
+  layers: { label: 'Layers', icon: IconLayers },
+}
 type DropHint = { key: string; edge: 'before' | 'after'; scope: string }
 type ContextMenu = { x: number; y: number; ids: string[] }
 
 type SidePanelProps = {
-  tab: SideTab
-  onTab: (tab: SideTab) => void
+  tab: SideTab | null
+  onTab: (tab: SideTab | null) => void
   placeTool: PlaceTool | null
   onPlaceTool: (tool: PlaceTool | null) => void
   onPaletteDragStart: (tool: PlaceTool, label: string, x: number, y: number) => void
   components: CustomComponentDef[]
-  onSaveGallery: () => void
-  onOpenGallery: (file: File) => void
   onRenameComponent: (id: string, name: string) => void
   onDeleteComponent: (id: string) => void
   onSaveAsComponent: () => void
@@ -164,6 +294,14 @@ type SidePanelProps = {
   onAddVariable: (variable: DesignVariable) => void
   onUpdateVariable: (id: string, patch: { name?: string; value?: string | number }) => void
   onDeleteVariable: (id: string) => void
+  artboards: Artboard[]
+  activeArtboardId: string
+  onSelectArtboard: (id: string) => void
+  onAddArtboard: () => void
+  onAddArtboardPreset: (presetId: string) => void
+  onDuplicateArtboard: () => void
+  onDeleteArtboard: () => void
+  canDeleteArtboard: boolean
   elements: WireElementModel[]
   selectedIds: string[]
   onSelect: (ids: string[]) => void
@@ -186,8 +324,6 @@ export default function SidePanel({
   onPlaceTool,
   onPaletteDragStart,
   components,
-  onSaveGallery,
-  onOpenGallery,
   onRenameComponent,
   onDeleteComponent,
   onSaveAsComponent,
@@ -196,6 +332,14 @@ export default function SidePanel({
   onAddVariable,
   onUpdateVariable,
   onDeleteVariable,
+  artboards,
+  activeArtboardId,
+  onSelectArtboard,
+  onAddArtboard,
+  onAddArtboardPreset,
+  onDuplicateArtboard,
+  onDeleteArtboard,
+  canDeleteArtboard,
   elements,
   selectedIds,
   onSelect,
@@ -210,7 +354,6 @@ export default function SidePanel({
   onRenameGroup,
   canGroupSelection,
 }: SidePanelProps) {
-  const galleryFileRef = useRef<HTMLInputElement>(null)
   const tree = buildLayerTree(elements)
   const [menu, setMenu] = useState<ContextMenu | null>(null)
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
@@ -382,417 +525,479 @@ export default function SidePanel({
     },
   ]
 
+  const togglePanel = (next: SideTab) => {
+    onTab(tab === next ? null : next)
+  }
+
+  const selectShapeTool = (tool: PlaceType) => {
+    const active = toolsEqual(placeTool, tool)
+    onPlaceTool(active ? null : tool)
+  }
+
+  const drawerTitle = tab ? PANEL_META[tab].label : ''
+
   return (
-    <aside className="side-panel">
-      <div className="panel-tabs panel-tabs--3" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'elements'}
-          className={tab === 'elements' ? 'is-active' : ''}
-          onClick={() => onTab('elements')}
-        >
-          Elements
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'layers'}
-          className={tab === 'layers' ? 'is-active' : ''}
-          onClick={() => onTab('layers')}
-        >
-          Layers
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'variables'}
-          className={tab === 'variables' ? 'is-active' : ''}
-          onClick={() => onTab('variables')}
-        >
-          Vars
-        </button>
+    <aside className={`side-panel${tab ? ' has-drawer' : ''}`}>
+      <div className="tool-rail" role="toolbar" aria-label="Tools">
+        <div className="tool-rail-group">
+          {ELEMENT_TYPES.map((item) => {
+            const Icon = SHAPE_ICONS[item.type]
+            const active = toolsEqual(placeTool, item.type)
+            return (
+              <Tooltip key={item.type} label={item.label}>
+                <button
+                  type="button"
+                  className={`tool-rail-btn${active ? ' is-active' : ''}`}
+                  aria-label={item.label}
+                  aria-pressed={active}
+                  onClick={() => selectShapeTool(item.type)}
+                >
+                  {Icon ? <Icon /> : null}
+                </button>
+              </Tooltip>
+            )
+          })}
+        </div>
+
+        <div className="tool-rail-group">
+          {(Object.keys(PANEL_META) as SideTab[]).map((key) => {
+            const meta = PANEL_META[key]
+            const Icon = meta.icon
+            const active = tab === key
+            return (
+              <Tooltip key={key} label={meta.label}>
+                <button
+                  type="button"
+                  className={`tool-rail-btn${active ? ' is-active' : ''}`}
+                  aria-label={meta.label}
+                  aria-pressed={active}
+                  onClick={() => togglePanel(key)}
+                >
+                  <Icon />
+                </button>
+              </Tooltip>
+            )
+          })}
+        </div>
       </div>
 
-      {tab === 'elements' && (
-        <div className="panel-body">
-          <p className="panel-hint">Click a shape, then click the artboard — or drag onto it.</p>
-          <p className="palette-section-label">Atomic</p>
-          <div className="palette-grid">
-            {ELEMENT_TYPES.map((item) => (
-              <PaletteButton
-                key={item.type}
-                tool={item.type}
-                label={item.label}
-                placeTool={placeTool}
-                onPlaceTool={onPlaceTool}
-                onPaletteDragStart={onPaletteDragStart}
-                preview={<PalettePreview type={item.type} />}
-              />
-            ))}
-          </div>
-          <p className="palette-section-label">Composed</p>
-          <div className="palette-grid">
-            {COMPOSED_TYPES.map((item) => (
-              <PaletteButton
-                key={item.type}
-                tool={item.type}
-                label={item.label}
-                placeTool={placeTool}
-                onPlaceTool={onPlaceTool}
-                onPaletteDragStart={onPaletteDragStart}
-                preview={<PalettePreview type={item.type} />}
-              />
-            ))}
+      {tab && (
+        <div className="side-drawer">
+          <div className="side-drawer-header">
+            <h2 className="side-drawer-title">{drawerTitle}</h2>
           </div>
 
-          <div className="palette-section-header">
-            <p className="palette-section-label">Custom</p>
-            <div className="gallery-actions">
-              <input
-                ref={galleryFileRef}
-                type="file"
-                accept=".json,.components.json,application/json,application/x-skeletch-components+json"
-                hidden
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) onOpenGallery(file)
-                  e.target.value = ''
-                }}
-              />
-              <button
-                type="button"
-                className="btn-ghost gallery-btn"
-                onClick={() => galleryFileRef.current?.click()}
-              >
-                Open gallery
-              </button>
-              <button
-                type="button"
-                className="btn-ghost gallery-btn"
-                onClick={onSaveGallery}
-                disabled={!components.length}
-              >
-                Save gallery
-              </button>
+          {tab === 'components' && (
+            <div className="panel-body">
+              <p className="panel-hint">Click or drag onto the artboard.</p>
+              <p className="palette-section-label">Built-in</p>
+              <div className="palette-grid">
+                {COMPOSED_TYPES.map((item) => (
+                  <PaletteButton
+                    key={item.type}
+                    tool={item.type}
+                    label={item.label}
+                    placeTool={placeTool}
+                    onPlaceTool={onPlaceTool}
+                    onPaletteDragStart={onPaletteDragStart}
+                    preview={<PalettePreview type={item.type} />}
+                  />
+                ))}
+              </div>
+              <div className="palette-section-header document-section">
+                <p className="palette-section-label">Custom</p>
+                <div className="layers-actions">
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    disabled={!canSaveAsComponent}
+                    onClick={onSaveAsComponent}
+                  >
+                    Save selection
+                  </button>
+                </div>
+              </div>
+              {!components.length ? (
+                <p className="panel-hint">No custom components yet.</p>
+              ) : (
+                <div className="palette-grid">
+                  {components.map((cmp) => (
+                    <PaletteButton
+                      key={cmp.id}
+                      tool={{ customId: cmp.id }}
+                      label={cmp.name}
+                      placeTool={placeTool}
+                      onPlaceTool={onPlaceTool}
+                      onPaletteDragStart={onPaletteDragStart}
+                      preview={<PartsPreview parts={cmp.parts} id={cmp.id} />}
+                      trailing={
+                        <div className="custom-item-actions">
+                          <button
+                            type="button"
+                            className="btn-ghost custom-item-btn"
+                            title="Rename"
+                            onClick={() => {
+                              const next = window.prompt('Rename component', cmp.name)
+                              if (next == null) return
+                              onRenameComponent(cmp.id, next)
+                            }}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-ghost custom-item-btn"
+                            title="Delete"
+                            onClick={() => {
+                              if (window.confirm(`Delete “${cmp.name}”?`)) {
+                                onDeleteComponent(cmp.id)
+                              }
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      }
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-          {!components.length ? (
-            <p className="panel-hint">Select elements → Save as component</p>
-          ) : (
-            <div className="palette-grid">
-              {components.map((cmp) => (
-                <PaletteButton
-                  key={cmp.id}
-                  tool={{ customId: cmp.id }}
-                  label={cmp.name}
-                  placeTool={placeTool}
-                  onPlaceTool={onPlaceTool}
-                  onPaletteDragStart={onPaletteDragStart}
-                  preview={<PartsPreview parts={cmp.parts} id={cmp.id} />}
-                  trailing={
-                    <div className="custom-item-actions">
-                      <button
-                        type="button"
-                        className="btn-ghost custom-item-btn"
-                        title="Rename"
-                        onClick={() => {
-                          const next = window.prompt('Rename component', cmp.name)
-                          if (next == null) return
-                          onRenameComponent(cmp.id, next)
-                        }}
-                      >
-                        ✎
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-ghost custom-item-btn"
-                        title="Delete"
-                        onClick={() => {
-                          if (window.confirm(`Delete “${cmp.name}”?`)) {
-                            onDeleteComponent(cmp.id)
+          )}
+
+          {tab === 'document' && (
+            <div className="panel-body">
+              <div className="palette-section-header">
+                <p className="palette-section-label">Variables</p>
+                <div className="layers-actions">
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={() => {
+                      const name = window.prompt(
+                        'Color variable name',
+                        nextVariableName(variables, 'color'),
+                      )
+                      if (name == null) return
+                      onAddVariable(createVariable('color', name, '#1a1a1a'))
+                    }}
+                  >
+                    + Color
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={() => {
+                      const name = window.prompt(
+                        'Number variable name',
+                        nextVariableName(variables, 'number'),
+                      )
+                      if (name == null) return
+                      onAddVariable(createVariable('number', name, 16))
+                    }}
+                  >
+                    + Number
+                  </button>
+                </div>
+              </div>
+              <p className="panel-hint">
+                Bind colors to Fill and numbers to font size / corner radius.
+              </p>
+              {!variables.length ? (
+                <p className="panel-hint">No variables yet.</p>
+              ) : (
+                <ul className="var-list">
+                  {variables.map((v) => (
+                    <li key={v.id} className="var-row">
+                      <span className="var-row-type">{v.type}</span>
+                      <input
+                        className="var-row-name"
+                        value={v.name}
+                        aria-label="Variable name"
+                        onChange={(e) => onUpdateVariable(v.id, { name: e.target.value })}
+                      />
+                      {v.type === 'color' ? (
+                        <ColorPicker
+                          value={sanitizeColor(String(v.value))}
+                          allowTransparent={false}
+                          showVariables={false}
+                          label={`Value of ${v.name}`}
+                          onChange={(color) => onUpdateVariable(v.id, { value: color })}
+                        />
+                      ) : (
+                        <input
+                          type="number"
+                          className="var-row-number"
+                          value={Number(v.value)}
+                          aria-label={`Value of ${v.name}`}
+                          onChange={(e) =>
+                            onUpdateVariable(v.id, { value: Number(e.target.value) })
                           }
+                        />
+                      )}
+                      <button
+                        type="button"
+                        className="btn-ghost var-row-delete"
+                        title="Delete variable"
+                        onClick={() => {
+                          if (window.confirm(`Delete $${v.name}?`)) onDeleteVariable(v.id)
                         }}
                       >
                         ×
                       </button>
-                    </div>
-                  }
-                />
-              ))}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
-        </div>
-      )}
 
-      {tab === 'layers' && (
-        <div className="panel-body">
-          {tree.length === 0 && (
-            <p className="panel-hint">No layers yet. Add elements from the Elements tab.</p>
-          )}
-          {editingGroupId && (
-            <p className="panel-hint editing-banner">
-              Editing group — double-click canvas empty or press Esc to exit.
-            </p>
-          )}
-          {selectedIds.length >= 1 && (
-            <div className="layers-actions">
-              <button
-                type="button"
-                className="btn-ghost"
-                disabled={!canGroupSelection}
-                onClick={() => onGroup?.()}
-              >
-                Group
-              </button>
-              <button
-                type="button"
-                className="btn-ghost"
-                disabled={!selectedGroupId}
-                onClick={() => selectedGroupId && onUngroup?.(selectedGroupId)}
-              >
-                Ungroup
-              </button>
-              <button
-                type="button"
-                className="btn-ghost"
-                disabled={!canSaveAsComponent}
-                onClick={onSaveAsComponent}
-              >
-                Save as component
-              </button>
-            </div>
-          )}
-          <ul className="layer-list">
-            {tree.map((row) => {
-              if (row.kind === 'group') {
-                const key = `group:${row.groupId}`
-                const childIds = row.children.map((c) => c.id)
-                const selected =
-                  childIds.length > 0 && childIds.every((id) => selectedIds.includes(id))
-                const open = editingGroupId === row.groupId
-                const renaming = renamingGroupId === row.groupId
-                return (
-                  <li key={key} className="layer-group-block">
-                    <div
-                      className={`layer-row layer-row--group${selected ? ' is-selected' : ''}${dragId === key ? ' is-dragging' : ''}${dropClass(key, 'tree')}`}
-                      draggable={!renaming}
-                      onDragStart={(e) => onDragStart(e, key, 'tree')}
-                      onDragOver={(e) => onDragOverRow(e, key, 'tree')}
-                      onDrop={(e) => onDropRow(e, key, 'tree')}
-                      onDragEnd={onDragEnd}
-                      onClick={guardClick((e) => {
-                        if (renaming) return
-                        selectGroup(row.groupId, e.metaKey || e.ctrlKey)
-                      })}
-                      onContextMenu={(e) => {
-                        if (!selected) selectGroup(row.groupId, false)
-                        openActions(e, childIds)
-                      }}
-                      onDoubleClick={(e) => {
-                        e.stopPropagation()
-                        if (e.altKey) {
-                          setRenamingGroupId(row.groupId)
-                          return
-                        }
-                        onEditGroup(row.groupId)
-                        onSelect(childIds.slice(0, 1))
-                      }}
-                    >
-                      <DropLine rowKey={key} scope="tree" />
-                      <span className="layer-type">{row.groupKind}</span>
-                      {renaming ? (
-                        <input
-                          className="layer-rename"
-                          autoFocus
-                          defaultValue={row.name}
-                          onClick={(e) => e.stopPropagation()}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onBlur={(e) => {
-                            const next = e.target.value.trim() || 'Group'
-                            onRenameGroup?.(row.groupId, next)
-                            setRenamingGroupId(null)
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') e.currentTarget.blur()
-                            if (e.key === 'Escape') setRenamingGroupId(null)
-                          }}
-                        />
-                      ) : (
-                        <span className="layer-name">{row.name}</span>
-                      )}
-                      <span className="layer-z">{row.children.length}</span>
-                    </div>
-                    {open &&
-                      row.children.map((el) => (
-                        <div
-                          key={el.id}
-                          className={`layer-row layer-row--child${selectedIds.includes(el.id) ? ' is-selected' : ''}${dragId === el.id ? ' is-dragging' : ''}${dropClass(el.id, row.groupId)}`}
-                          draggable
-                          onDragStart={(e) => onDragStart(e, el.id, row.groupId)}
-                          onDragOver={(e) => onDragOverRow(e, el.id, row.groupId)}
-                          onDrop={(e) => onDropRow(e, el.id, row.groupId)}
-                          onDragEnd={onDragEnd}
-                          onClick={guardClick((e) => {
-                            e.stopPropagation()
-                            if (e.metaKey || e.ctrlKey) {
-                              onSelect(
-                                selectedIds.includes(el.id)
-                                  ? selectedIds.filter((id) => id !== el.id)
-                                  : [...selectedIds, el.id],
-                              )
-                            } else {
-                              onSelect([el.id])
-                            }
-                          })}
-                          onContextMenu={(e) => {
-                            e.stopPropagation()
-                            const ids = selectedIds.includes(el.id) ? selectedIds : [el.id]
-                            if (!selectedIds.includes(el.id)) onSelect([el.id])
-                            openActions(e, ids)
-                          }}
-                        >
-                          <DropLine rowKey={el.id} scope={row.groupId} />
-                          <span className="layer-type">{el.type}</span>
-                          <span className="layer-name">{el.name}</span>
-                          <span className="layer-z">z {el.z}</span>
-                        </div>
-                      ))}
-                  </li>
-                )
-              }
-
-              const el = row.el
-              const selected = selectedIds.includes(el.id)
-              return (
-                <li
-                  key={el.id}
-                  className={`layer-row${selected ? ' is-selected' : ''}${dragId === el.id ? ' is-dragging' : ''}${dropClass(el.id, 'tree')}`}
-                  draggable
-                  onDragStart={(e) => onDragStart(e, el.id, 'tree')}
-                  onDragOver={(e) => onDragOverRow(e, el.id, 'tree')}
-                  onDrop={(e) => onDropRow(e, el.id, 'tree')}
-                  onDragEnd={onDragEnd}
-                  onClick={guardClick((e) => {
-                    if (e.metaKey || e.ctrlKey) {
-                      onSelect(
-                        selected
-                          ? selectedIds.filter((id) => id !== el.id)
-                          : [...selectedIds, el.id],
-                      )
-                    } else {
-                      onSelect([el.id])
-                      onEditGroup(null)
-                    }
-                  })}
-                  onContextMenu={(e) => {
-                    if (!selected) {
-                      onSelect([el.id])
-                      onEditGroup(null)
-                    }
-                    openActions(e, selected ? selectedIds : [el.id])
-                  }}
+          {tab === 'artboards' && (
+            <div className="panel-body">
+              <p className="palette-section-label">Create</p>
+              <div className="artboard-preset-grid">
+                {FRAME_PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="btn-ghost artboard-preset-btn"
+                    onClick={() => onAddArtboardPreset(p.id)}
+                  >
+                    <span className="artboard-preset-name">{p.label}</span>
+                    <span className="artboard-preset-size">
+                      {p.width}×{p.height}
+                    </span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="btn-ghost artboard-preset-btn"
+                  onClick={onAddArtboard}
                 >
-                  <DropLine rowKey={el.id} scope="tree" />
-                  <span className="layer-type">{el.type}</span>
-                  <span className="layer-name">{el.name}</span>
-                  <span className="layer-z">z {el.z}</span>
-                </li>
-              )
-            })}
-          </ul>
-          {menu && (
-            <ActionMenu
-              x={menu.x}
-              y={menu.y}
-              items={menuItems}
-              onClose={() => setMenu(null)}
-            />
-          )}
-        </div>
-      )}
+                  <span className="artboard-preset-name">Same as active</span>
+                  <span className="artboard-preset-size">Copy size</span>
+                </button>
+              </div>
 
-      {tab === 'variables' && (
-        <div className="panel-body">
-          <p className="panel-hint">
-            Bind colors to Fill and numbers to font size / corner radius. Changing a value updates
-            every bound element.
-          </p>
-          <div className="layers-actions">
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => {
-                const name = window.prompt(
-                  'Color variable name',
-                  nextVariableName(variables, 'color'),
-                )
-                if (name == null) return
-                onAddVariable(createVariable('color', name, '#1a1a1a'))
-              }}
-            >
-              + Color
-            </button>
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => {
-                const name = window.prompt(
-                  'Number variable name',
-                  nextVariableName(variables, 'number'),
-                )
-                if (name == null) return
-                onAddVariable(createVariable('number', name, 16))
-              }}
-            >
-              + Number
-            </button>
-          </div>
-          {!variables.length ? (
-            <p className="panel-hint">No variables yet.</p>
-          ) : (
-            <ul className="var-list">
-              {variables.map((v) => (
-                <li key={v.id} className="var-row">
-                  <span className="var-row-type">{v.type}</span>
-                  <input
-                    className="var-row-name"
-                    value={v.name}
-                    aria-label="Variable name"
-                    onChange={(e) => onUpdateVariable(v.id, { name: e.target.value })}
-                  />
-                  {v.type === 'color' ? (
-                    <ColorPicker
-                      value={sanitizeColor(String(v.value))}
-                      allowTransparent={false}
-                      showVariables={false}
-                      label={`Value of ${v.name}`}
-                      onChange={(color) => onUpdateVariable(v.id, { value: color })}
-                    />
-                  ) : (
-                    <input
-                      type="number"
-                      className="var-row-number"
-                      value={Number(v.value)}
-                      aria-label={`Value of ${v.name}`}
-                      onChange={(e) =>
-                        onUpdateVariable(v.id, { value: Number(e.target.value) })
-                      }
-                    />
-                  )}
+              <div className="palette-section-header document-section">
+                <p className="palette-section-label">Boards</p>
+                <div className="layers-actions">
+                  <button type="button" className="btn-ghost" onClick={onDuplicateArtboard}>
+                    Duplicate
+                  </button>
                   <button
                     type="button"
-                    className="btn-ghost var-row-delete"
-                    title="Delete variable"
-                    onClick={() => {
-                      if (window.confirm(`Delete $${v.name}?`)) onDeleteVariable(v.id)
-                    }}
+                    className="btn-ghost"
+                    disabled={!canDeleteArtboard}
+                    onClick={onDeleteArtboard}
                   >
-                    ×
+                    Delete
                   </button>
-                </li>
-              ))}
-            </ul>
+                </div>
+              </div>
+              <ul className="layer-list">
+                {artboards.map((ab) => (
+                  <li
+                    key={ab.id}
+                    className={`layer-row${ab.id === activeArtboardId ? ' is-selected' : ''}`}
+                    onClick={() => onSelectArtboard(ab.id)}
+                  >
+                    <span className="layer-type">{ab.presetId}</span>
+                    <span className="layer-name">{ab.name}</span>
+                    <span className="layer-z">
+                      {ab.width}×{ab.height}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {tab === 'layers' && (
+            <div className="panel-body">
+              {tree.length === 0 && (
+                <p className="panel-hint">No layers yet. Place shapes from the tool rail.</p>
+              )}
+              {editingGroupId && (
+                <p className="panel-hint editing-banner">
+                  Editing group — double-click canvas empty or press Esc to exit.
+                </p>
+              )}
+              {selectedIds.length >= 1 && (
+                <div className="layers-actions">
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    disabled={!canGroupSelection}
+                    onClick={() => onGroup?.()}
+                  >
+                    Group
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    disabled={!selectedGroupId}
+                    onClick={() => selectedGroupId && onUngroup?.(selectedGroupId)}
+                  >
+                    Ungroup
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    disabled={!canSaveAsComponent}
+                    onClick={onSaveAsComponent}
+                  >
+                    Save as component
+                  </button>
+                </div>
+              )}
+              <ul className="layer-list">
+                {tree.map((row) => {
+                  if (row.kind === 'group') {
+                    const key = `group:${row.groupId}`
+                    const childIds = row.children.map((c) => c.id)
+                    const selected =
+                      childIds.length > 0 && childIds.every((id) => selectedIds.includes(id))
+                    const open = editingGroupId === row.groupId
+                    const renaming = renamingGroupId === row.groupId
+                    return (
+                      <li key={key} className="layer-group-block">
+                        <div
+                          className={`layer-row layer-row--group${selected ? ' is-selected' : ''}${dragId === key ? ' is-dragging' : ''}${dropClass(key, 'tree')}`}
+                          draggable={!renaming}
+                          onDragStart={(e) => onDragStart(e, key, 'tree')}
+                          onDragOver={(e) => onDragOverRow(e, key, 'tree')}
+                          onDrop={(e) => onDropRow(e, key, 'tree')}
+                          onDragEnd={onDragEnd}
+                          onClick={guardClick((e) => {
+                            if (renaming) return
+                            selectGroup(row.groupId, e.metaKey || e.ctrlKey)
+                          })}
+                          onContextMenu={(e) => {
+                            if (!selected) selectGroup(row.groupId, false)
+                            openActions(e, childIds)
+                          }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation()
+                            if (e.altKey) {
+                              setRenamingGroupId(row.groupId)
+                              return
+                            }
+                            onEditGroup(row.groupId)
+                            onSelect(childIds.slice(0, 1))
+                          }}
+                        >
+                          <DropLine rowKey={key} scope="tree" />
+                          <span className="layer-type">{row.groupKind}</span>
+                          {renaming ? (
+                            <input
+                              className="layer-rename"
+                              autoFocus
+                              defaultValue={row.name}
+                              onClick={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onBlur={(e) => {
+                                const next = e.target.value.trim() || 'Group'
+                                onRenameGroup?.(row.groupId, next)
+                                setRenamingGroupId(null)
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') e.currentTarget.blur()
+                                if (e.key === 'Escape') setRenamingGroupId(null)
+                              }}
+                            />
+                          ) : (
+                            <span className="layer-name">{row.name}</span>
+                          )}
+                          <span className="layer-z">{row.children.length}</span>
+                        </div>
+                        {open &&
+                          row.children.map((el) => (
+                            <div
+                              key={el.id}
+                              className={`layer-row layer-row--child${selectedIds.includes(el.id) ? ' is-selected' : ''}${dragId === el.id ? ' is-dragging' : ''}${dropClass(el.id, row.groupId)}`}
+                              draggable
+                              onDragStart={(e) => onDragStart(e, el.id, row.groupId)}
+                              onDragOver={(e) => onDragOverRow(e, el.id, row.groupId)}
+                              onDrop={(e) => onDropRow(e, el.id, row.groupId)}
+                              onDragEnd={onDragEnd}
+                              onClick={guardClick((e) => {
+                                e.stopPropagation()
+                                if (e.metaKey || e.ctrlKey) {
+                                  onSelect(
+                                    selectedIds.includes(el.id)
+                                      ? selectedIds.filter((id) => id !== el.id)
+                                      : [...selectedIds, el.id],
+                                  )
+                                } else {
+                                  onSelect([el.id])
+                                }
+                              })}
+                              onContextMenu={(e) => {
+                                e.stopPropagation()
+                                const ids = selectedIds.includes(el.id) ? selectedIds : [el.id]
+                                if (!selectedIds.includes(el.id)) onSelect([el.id])
+                                openActions(e, ids)
+                              }}
+                            >
+                              <DropLine rowKey={el.id} scope={row.groupId} />
+                              <span className="layer-type">{el.type}</span>
+                              <span className="layer-name">{el.name}</span>
+                              <span className="layer-z">z {el.z}</span>
+                            </div>
+                          ))}
+                      </li>
+                    )
+                  }
+
+                  const el = row.el
+                  const selected = selectedIds.includes(el.id)
+                  return (
+                    <li
+                      key={el.id}
+                      className={`layer-row${selected ? ' is-selected' : ''}${dragId === el.id ? ' is-dragging' : ''}${dropClass(el.id, 'tree')}`}
+                      draggable
+                      onDragStart={(e) => onDragStart(e, el.id, 'tree')}
+                      onDragOver={(e) => onDragOverRow(e, el.id, 'tree')}
+                      onDrop={(e) => onDropRow(e, el.id, 'tree')}
+                      onDragEnd={onDragEnd}
+                      onClick={guardClick((e) => {
+                        if (e.metaKey || e.ctrlKey) {
+                          onSelect(
+                            selected
+                              ? selectedIds.filter((id) => id !== el.id)
+                              : [...selectedIds, el.id],
+                          )
+                        } else {
+                          onSelect([el.id])
+                          onEditGroup(null)
+                        }
+                      })}
+                      onContextMenu={(e) => {
+                        if (!selected) {
+                          onSelect([el.id])
+                          onEditGroup(null)
+                        }
+                        openActions(e, selected ? selectedIds : [el.id])
+                      }}
+                    >
+                      <DropLine rowKey={el.id} scope="tree" />
+                      <span className="layer-type">{el.type}</span>
+                      <span className="layer-name">{el.name}</span>
+                      <span className="layer-z">z {el.z}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+              {menu && (
+                <ActionMenu
+                  x={menu.x}
+                  y={menu.y}
+                  items={menuItems}
+                  onClose={() => setMenu(null)}
+                />
+              )}
+            </div>
           )}
         </div>
       )}

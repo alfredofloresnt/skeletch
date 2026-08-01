@@ -13,12 +13,7 @@ import {
 import {
   addComponent,
   canSaveSelection,
-  downloadLibrary,
-  loadLibrary,
-  mergeLibraries,
   nextComponentDefaultName,
-  persistLibrary,
-  readLibraryFile,
   removeComponent,
   renameComponent,
   selectionToParts,
@@ -28,6 +23,7 @@ import {
   bringToFront,
   canGroup,
   createComposed,
+  createDrawnElement,
   createElement,
   createFromParts,
   duplicateElements,
@@ -61,7 +57,7 @@ import type {
   Point,
   WireElement,
 } from './lib/types'
-import { isCustomPlace } from './lib/types'
+import { isCustomPlace, isDrawTool } from './lib/types'
 import {
   clearVariableBindings,
   renameVariable,
@@ -84,6 +80,7 @@ type HistorySnapshot = {
   snapOn: boolean
   elements: WireElement[]
   variables: DesignVariable[]
+  components: CustomComponentDef[]
   selectedIds: string[]
   editingGroupId: string | null
   artboardSelected: boolean
@@ -100,9 +97,9 @@ export default function App() {
   const [artboardSelected, setArtboardSelected] = useState(false)
   const [snapOn, setSnapOn] = useState(true)
   const [placeTool, setPlaceTool] = useState<PlaceTool | null>(null)
-  const [components, setComponents] = useState<CustomComponentDef[]>(() => loadLibrary())
+  const [components, setComponents] = useState<CustomComponentDef[]>([])
   const [variables, setVariables] = useState<DesignVariable[]>([])
-  const [sideTab, setSideTab] = useState<SideTab>('elements')
+  const [sideTab, setSideTab] = useState<SideTab | null>(null)
   const [dragLayerId, setDragLayerId] = useState<string | null>(null)
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
   const [pan, setPan] = useState<Point>({ x: 80, y: 60 })
@@ -127,6 +124,7 @@ export default function App() {
     snapOn,
     elements,
     variables,
+    components,
     selectedIds,
     editingGroupId,
     artboardSelected,
@@ -140,6 +138,10 @@ export default function App() {
       artboards: current.artboards.map((ab) => ({ ...ab })),
       elements: current.elements.map((el) => ({ ...el })),
       variables: current.variables.map((v) => ({ ...v })),
+      components: current.components.map((c) => ({
+        ...c,
+        parts: c.parts.map((p) => ({ ...p })),
+      })),
       selectedIds: [...current.selectedIds],
     })
     if (historyRef.current.length > HISTORY_LIMIT) historyRef.current.shift()
@@ -154,16 +156,12 @@ export default function App() {
     setSnapOn(previous.snapOn)
     setElements(previous.elements)
     setVariables(previous.variables)
+    setComponents(previous.components)
     setSelectedIds(previous.selectedIds)
     setEditingGroupId(previous.editingGroupId)
     setArtboardSelected(previous.artboardSelected)
     setPlaceTool(null)
     setCanUndo(historyRef.current.length > 0)
-  }, [])
-
-  const updateLibrary = useCallback((next: CustomComponentDef[]) => {
-    setComponents(next)
-    persistLibrary(next)
   }, [])
 
   const updateElement = useCallback(
@@ -175,7 +173,13 @@ export default function App() {
   )
 
   const place = useCallback(
-    (tool: PlaceTool, x: number, y: number, artboardId: string) => {
+    (
+      tool: PlaceTool,
+      x: number,
+      y: number,
+      artboardId: string,
+      size?: { w: number; h: number },
+    ) => {
       recordHistory()
       setActiveArtboardId(artboardId)
       setArtboardSelected(false)
@@ -207,8 +211,12 @@ export default function App() {
           return [...prev, ...created]
         }
 
-        const el = createElement(tool, x, y, z0, snapOn, artboardId)
+        const el =
+          size && isDrawTool(tool)
+            ? createDrawnElement(tool, { x, y, w: size.w, h: size.h }, z0, artboardId)
+            : createElement(tool, x, y, z0, snapOn, artboardId)
         setSelectedIds([el.id])
+        setEditingGroupId(null)
         return [...prev, el]
       })
     },
@@ -282,7 +290,9 @@ export default function App() {
         if (!target) return
         const local = worldToLocal(target, { x: worldX, y: worldY })
         place(drag.tool, local.x, local.y, target.id)
-        setPlaceTool(null)
+        // Stamp tools clear; draw tools stay selected for continued drawing.
+        if (!isDrawTool(drag.tool)) setPlaceTool(null)
+        else setPlaceTool(drag.tool)
         window.getSelection()?.removeAllRanges()
       }
 
@@ -306,9 +316,10 @@ export default function App() {
     if (name == null) return
     const trimmed = name.trim()
     if (!trimmed) return
-    updateLibrary(addComponent(components, parts, trimmed))
-    setSideTab('elements')
-  }, [elements, selectedIds, editingGroupId, components, updateLibrary])
+    recordHistory()
+    setComponents(addComponent(components, parts, trimmed))
+    setSideTab('document')
+  }, [elements, selectedIds, editingGroupId, components, recordHistory])
 
   const onPreset = (id: string) => {
     recordHistory()
@@ -346,6 +357,26 @@ export default function App() {
       height: source.height,
       presetId: source.presetId,
       name: source.presetId === 'custom' ? `Artboard ${artboards.length + 1}` : source.name,
+      x: pos.x,
+      y: pos.y,
+    })
+    setArtboards((prev) => [...prev, next])
+    setActiveArtboardId(next.id)
+    setSelectedIds([])
+    setArtboardSelected(true)
+    setEditingGroupId(null)
+  }
+
+  const addArtboardPreset = (presetId: string) => {
+    const preset = FRAME_PRESETS.find((p) => p.id === presetId)
+    if (!preset) return
+    recordHistory()
+    const pos = nextArtboardPosition(artboards)
+    const next = createArtboard({
+      width: preset.width,
+      height: preset.height,
+      presetId: preset.id,
+      name: preset.label,
       x: pos.x,
       y: pos.y,
     })
@@ -648,6 +679,7 @@ export default function App() {
       snapOn,
       elements,
       variables,
+      components,
     })
     downloadWireframe(doc)
   }
@@ -661,22 +693,13 @@ export default function App() {
       setSnapOn(doc.snapOn)
       setElements(doc.elements)
       setVariables(doc.variables || [])
+      setComponents(doc.components || [])
       setSelectedIds([])
       setArtboardSelected(false)
       setEditingGroupId(null)
       setPlaceTool(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not open .wireframe file'
-      window.alert(message)
-    }
-  }
-
-  const handleOpenGallery = async (file: File) => {
-    try {
-      const imported = await readLibraryFile(file)
-      updateLibrary(mergeLibraries(components, imported))
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not open components file'
       window.alert(message)
     }
   }
@@ -725,16 +748,33 @@ export default function App() {
           onPlaceTool={setPlaceTool}
           onPaletteDragStart={startPaletteDrag}
           components={components}
-          onSaveGallery={() => downloadLibrary(components)}
-          onOpenGallery={handleOpenGallery}
-          onRenameComponent={(id, name) => updateLibrary(renameComponent(components, id, name))}
-          onDeleteComponent={(id) => updateLibrary(removeComponent(components, id))}
+          onRenameComponent={(id, name) => {
+            recordHistory()
+            setComponents(renameComponent(components, id, name))
+          }}
+          onDeleteComponent={(id) => {
+            recordHistory()
+            setComponents(removeComponent(components, id))
+          }}
           onSaveAsComponent={saveSelectionAsComponent}
           canSaveAsComponent={canSaveComponent}
           variables={variables}
           onAddVariable={handleAddVariable}
           onUpdateVariable={handleUpdateVariable}
           onDeleteVariable={handleDeleteVariable}
+          artboards={artboards}
+          activeArtboardId={activeArtboardId}
+          onSelectArtboard={(id) => {
+            setActiveArtboardId(id)
+            setSelectedIds([])
+            setArtboardSelected(true)
+            setEditingGroupId(null)
+          }}
+          onAddArtboard={addArtboard}
+          onAddArtboardPreset={addArtboardPreset}
+          onDuplicateArtboard={duplicateArtboard}
+          onDeleteArtboard={deleteArtboard}
+          canDeleteArtboard={artboards.length > 1}
           elements={activeElements}
           selectedIds={selectedIds}
           onSelect={(ids) => {

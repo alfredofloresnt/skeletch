@@ -1,7 +1,9 @@
 import { createArtboard } from './artboards'
+import { sanitizeComponents } from './customComponents'
 import { sanitizeVariable } from './variables'
 import type {
   Artboard,
+  CustomComponentDef,
   DesignVariable,
   TextAlign,
   VerticalAlign,
@@ -15,7 +17,8 @@ export const WIREFRAME_MIME = 'application/x-wireframe+json'
 /**
  * Portable document format (.wireframe)
  * v2: artboards[] + activeArtboardId + elements with artboardId
- * optional variables[] + fillVar / fontSizeVar / cornerRadiusVar
+ * optional variables[] + components[] (project custom components)
+ * optional fillVar / fontSizeVar / cornerRadiusVar on elements
  * v1: singular artboard + presetId (migrated on parse)
  */
 
@@ -25,12 +28,14 @@ export function serializeWireframe({
   snapOn,
   elements,
   variables = [],
+  components = [],
 }: {
   artboards: Artboard[]
   activeArtboardId: string
   snapOn: boolean
   elements: WireElement[]
   variables?: DesignVariable[]
+  components?: CustomComponentDef[]
 }): WireframeDocument {
   return {
     format: 'wireframe',
@@ -43,6 +48,7 @@ export function serializeWireframe({
     variables: variables
       .map((v) => sanitizeVariable(v))
       .filter((v): v is DesignVariable => Boolean(v)),
+    components: sanitizeComponents(components),
   }
 }
 
@@ -123,6 +129,7 @@ export function parseWireframe(raw: string | unknown): ParsedDoc {
       activeArtboardId,
       snapOn: data.snapOn !== false,
       variables: sanitizeVariables(data.variables),
+      components: sanitizeComponents(data.components),
       elements: (data.elements as WireElement[]).map((el) => {
         const next = sanitizeElement(el, fallback)
         if (!artboards.some((ab) => ab.id === next.artboardId)) {
@@ -151,6 +158,7 @@ export function parseWireframe(raw: string | unknown): ParsedDoc {
     activeArtboardId: artboard.id,
     snapOn: data.snapOn !== false,
     variables: sanitizeVariables(data.variables),
+    components: sanitizeComponents(data.components),
     elements: (data.elements as WireElement[]).map((el) =>
       sanitizeElement(el, artboard.id),
     ),

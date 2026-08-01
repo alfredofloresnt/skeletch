@@ -8,7 +8,12 @@ import {
   worldToLocal,
 } from '../lib/artboards'
 import { GRID_SIZE, MAX_ZOOM, MIN_ZOOM } from '../lib/constants'
-import { canGroup, expandSelectionForGroups, sharedGroupId } from '../lib/elements'
+import {
+  canGroup,
+  drawnShapeBox,
+  expandSelectionForGroups,
+  sharedGroupId,
+} from '../lib/elements'
 import {
   angleOfPoint,
   applyResize,
@@ -27,14 +32,80 @@ import {
 } from '../lib/geometry'
 import type {
   Artboard,
+  DrawTool,
   PlaceTool,
   Point,
   Rect,
   ResizeHandle,
   WireElement as WireElementModel,
 } from '../lib/types'
+import { isDrawTool } from '../lib/types'
 import ActionMenu from './ActionMenu'
 import WireElement, { SelectionOverlay } from './WireElement'
+
+type DrawPreview = {
+  artboardId: string
+  tool: DrawTool
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+function DrawPreviewOverlay({ preview }: { preview: DrawPreview }) {
+  const { tool, x, y, w, h } = preview
+  if (tool === 'line') {
+    const minX = Math.min(0, w)
+    const minY = Math.min(0, h)
+    const boxW = Math.max(Math.abs(w), 1)
+    const boxH = Math.max(Math.abs(h), 1)
+    return (
+      <div
+        className="draw-preview draw-preview--line"
+        style={{ left: x + minX, top: y + minY, width: boxW, height: boxH }}
+      >
+        <svg className="el-svg" width={boxW} height={boxH}>
+          <line
+            x1={0 - minX}
+            y1={0 - minY}
+            x2={w - minX}
+            y2={h - minY}
+            stroke="currentColor"
+            strokeWidth={2}
+          />
+        </svg>
+      </div>
+    )
+  }
+
+  if (tool === 'triangle') {
+    const tw = Math.max(w, 1)
+    const th = Math.max(h, 1)
+    return (
+      <div
+        className="draw-preview draw-preview--triangle"
+        style={{ left: x, top: y, width: tw, height: th }}
+      >
+        <svg className="el-svg" width={tw} height={th} viewBox={`0 0 ${tw} ${th}`}>
+          <polygon
+            points={`${tw / 2},1 ${tw - 1},${th - 1} 1,${th - 1}`}
+            fill="rgba(31, 111, 235, 0.08)"
+            stroke="currentColor"
+            strokeWidth={2}
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={`draw-preview draw-preview--${tool}`}
+      style={{ left: x, top: y, width: Math.max(w, 1), height: Math.max(h, 1) }}
+    />
+  )
+}
 
 type ElementOrigin = {
   x: number
@@ -109,6 +180,15 @@ type Interaction =
       artboardId: string
       historyRecorded?: boolean
     }
+  | {
+      mode: 'draw'
+      tool: DrawTool
+      artboardId: string
+      startLocal: Point
+      startClient: Point
+      shiftKey: boolean
+      historyRecorded?: boolean
+    }
 
 type CanvasProps = {
   artboards: Artboard[]
@@ -136,7 +216,13 @@ type CanvasProps = {
     updates: { id: string; x: number; y: number; rotation: number }[],
   ) => void
   onEditStart: () => void
-  onPlace: (tool: PlaceTool, x: number, y: number, artboardId: string) => void
+  onPlace: (
+    tool: PlaceTool,
+    x: number,
+    y: number,
+    artboardId: string,
+    size?: { w: number; h: number },
+  ) => void
   onClearPlace: () => void
   pan: Point
   zoom: number
@@ -181,6 +267,7 @@ export default function Canvas({
   const [spaceDown, setSpaceDown] = useState(false)
   const [panning, setPanning] = useState(false)
   const [marquee, setMarquee] = useState<Rect | null>(null)
+  const [drawPreview, setDrawPreview] = useState<DrawPreview | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
   const [draggingElements, setDraggingElements] = useState(false)
   const interaction = useRef<Interaction | null>(null)
@@ -384,11 +471,39 @@ export default function Canvas({
 
     if (placeTool) {
       const target = resolvePlaceTarget(world)
-      if (target) {
-        onPlace(placeTool, target.local.x, target.local.y, target.board.id)
+      if (!target) {
+        if (!isDrawTool(placeTool)) onClearPlace()
+        return
+      }
+
+      if (isDrawTool(placeTool)) {
         onActiveArtboard(target.board.id)
         onArtboardSelected(false)
+        onSelect([])
+        onEditGroup(null)
+        interaction.current = {
+          mode: 'draw',
+          tool: placeTool,
+          artboardId: target.board.id,
+          startLocal: { ...target.local },
+          startClient: { x: e.clientX, y: e.clientY },
+          shiftKey: e.shiftKey,
+        }
+        setDrawPreview({
+          artboardId: target.board.id,
+          tool: placeTool,
+          x: target.local.x,
+          y: target.local.y,
+          w: 0,
+          h: 0,
+        })
+        e.currentTarget.setPointerCapture(e.pointerId)
+        return
       }
+
+      onPlace(placeTool, target.local.x, target.local.y, target.board.id)
+      onActiveArtboard(target.board.id)
+      onArtboardSelected(false)
       onClearPlace()
       return
     }
@@ -473,6 +588,8 @@ export default function Canvas({
 
   const onElementPointerDown = (e: ReactPointerEvent, id: string) => {
     if (spaceDown || e.button === 1) return
+    // Draw tools paint over existing elements (bubble to stage).
+    if (isDrawTool(placeTool)) return
     e.stopPropagation()
     e.preventDefault()
 
@@ -793,11 +910,54 @@ export default function Canvas({
       let radius = cornerRadiusFromPointer(local, ix.bounds, ix.corner)
       if (snapOn) radius = snap(radius, true)
       onCornerRadiusChange(ix.id, radius)
+      return
+    }
+
+    if (ix.mode === 'draw') {
+      ix.shiftKey = e.shiftKey
+      const ab = boardMap.get(ix.artboardId)
+      if (!ab) return
+      const local = worldToLocal(ab, world)
+      const box = drawnShapeBox(ix.tool, ix.startLocal, local, {
+        shiftKey: e.shiftKey,
+        snapOn,
+      })
+      setDrawPreview({
+        artboardId: ix.artboardId,
+        tool: ix.tool,
+        ...box,
+      })
     }
   }
 
-  const onPointerUp = () => {
+  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     const ix = interaction.current
+    if (ix?.mode === 'draw') {
+      const ab = boardMap.get(ix.artboardId)
+      const dx = e.clientX - ix.startClient.x
+      const dy = e.clientY - ix.startClient.y
+      const dragged = dx * dx + dy * dy >= 16
+      if (ab) {
+        if (dragged) {
+          const local = worldToLocal(
+            ab,
+            screenToWorld(e.clientX, e.clientY, getStageRect(), pan, zoom),
+          )
+          const box = drawnShapeBox(ix.tool, ix.startLocal, local, {
+            shiftKey: e.shiftKey || ix.shiftKey,
+            snapOn,
+          })
+          onPlace(ix.tool, box.x, box.y, ix.artboardId, { w: box.w, h: box.h })
+        } else {
+          onPlace(ix.tool, ix.startLocal.x, ix.startLocal.y, ix.artboardId)
+        }
+        onActiveArtboard(ix.artboardId)
+        onArtboardSelected(false)
+      }
+      setDrawPreview(null)
+      interaction.current = null
+      return
+    }
     if (ix?.mode === 'marquee' && marquee) {
       const hits = elements
         .filter((el) => {
@@ -951,6 +1111,9 @@ export default function Canvas({
                     />
                   )
                 })}
+                {drawPreview && drawPreview.artboardId === ab.id && (
+                  <DrawPreviewOverlay preview={drawPreview} />
+                )}
                 {showGroupResize && boardBounds && (
                   <SelectionOverlay
                     bounds={boardBounds}
@@ -998,7 +1161,9 @@ export default function Canvas({
       <div className="canvas-hint">
         {editingGroupId
           ? 'Editing group atoms · Esc to exit'
-          : 'Drag label to move artboard · Drag elements between boards · Pinch zoom · Shift-drag select'}
+          : isDrawTool(placeTool)
+            ? 'Click-drag to draw · Shift constrains · Esc to leave tool'
+            : 'Drag label to move artboard · Drag elements between boards · Pinch zoom · Shift-drag select'}
       </div>
       {menu && (
         <ActionMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />

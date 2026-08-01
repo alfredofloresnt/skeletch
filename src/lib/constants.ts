@@ -10,16 +10,17 @@ export const FRAME_PRESETS = [
 
 export type FramePresetId = (typeof FRAME_PRESETS)[number]['id'] | 'custom'
 
-export const ELEMENT_TYPES: { type: AtomicType; label: string }[] = [
+/** Atomic place tools shown in the left icon rail. */
+export const ELEMENT_TYPES: { type: Exclude<AtomicType, 'image'>; label: string }[] = [
   { type: 'rect', label: 'Rectangle' },
   { type: 'circle', label: 'Circle' },
   { type: 'triangle', label: 'Triangle' },
   { type: 'line', label: 'Line' },
   { type: 'text', label: 'Text' },
-  { type: 'image', label: 'Image' },
 ]
 
 export const COMPOSED_TYPES: { type: ComposedKind; label: string }[] = [
+  { type: 'image', label: 'Image' },
   { type: 'input', label: 'Input' },
   { type: 'search', label: 'Search' },
   { type: 'button', label: 'Button' },

@@ -1,11 +1,13 @@
-import { DEFAULTS } from './constants'
-import { getBounds, snap, uid } from './geometry'
+import { DEFAULTS, MIN_SIZE } from './constants'
+import { getBounds, normalizeRect, snap, uid } from './geometry'
 import type {
   AtomicType,
   ComposedKind,
+  DrawTool,
   LayoutPart,
   LayerTreeRow,
   PlaceType,
+  Point,
   Rect,
   WireElement,
 } from './types'
@@ -39,8 +41,18 @@ function atom(type: AtomicType, overrides: Partial<LayoutPart> & Pick<LayoutPart
   }
 }
 
+/** Image placeholder: frame rect + two diagonals (no atomic image). */
+function imageParts(x: number, y: number, w: number, h: number, name = 'Image'): LayoutPart[] {
+  return [
+    atom('rect', { x, y, w, h, name: `${name} Frame` }),
+    atom('line', { x, y, w, h, name: `${name} Diag 1` }),
+    atom('line', { x, y: y + h, w, h: -h, name: `${name} Diag 2` }),
+  ]
+}
+
 /** Relative layouts (origin top-left of composition). */
 const COMPOSED_LAYOUTS: Record<ComposedKind, () => LayoutPart[]> = {
+  image: () => imageParts(0, 0, 160, 120),
   input: () => [
     atom('rect', { x: 0, y: 0, w: 200, h: 40, cornerRadius: 4, name: 'Field' }),
     atom('text', {
@@ -141,7 +153,7 @@ const COMPOSED_LAYOUTS: Record<ComposedKind, () => LayoutPart[]> = {
   ],
   card: () => [
     atom('rect', { x: 0, y: 0, w: 220, h: 260, cornerRadius: 8, name: 'Frame' }),
-    atom('image', { x: 16, y: 16, w: 188, h: 110, name: 'Media' }),
+    ...imageParts(16, 16, 188, 110, 'Media'),
     atom('text', {
       x: 16,
       y: 140,
@@ -168,7 +180,7 @@ const COMPOSED_LAYOUTS: Record<ComposedKind, () => LayoutPart[]> = {
   ],
   slideshow: () => [
     atom('rect', { x: 0, y: 0, w: 280, h: 160, cornerRadius: 6, name: 'Frame' }),
-    atom('image', { x: 12, y: 12, w: 256, h: 112, name: 'Slide' }),
+    ...imageParts(12, 12, 256, 112, 'Slide'),
     // Prev chevron <
     atom('line', { x: 20, y: 70, w: 8, h: -8, name: 'Prev L' }),
     atom('line', { x: 20, y: 70, w: 8, h: 8, name: 'Prev R' }),
@@ -279,6 +291,87 @@ export function createElement(
     y: snap(y - h / 2, snapOn),
     w,
     h,
+    z,
+    artboardId,
+    fill: defaults.fill,
+    stroke: defaults.stroke,
+    strokeWidth: defaults.strokeWidth,
+    opacity: defaults.opacity,
+    cornerRadius: defaults.cornerRadius ?? 0,
+    text: defaults.text,
+    fontSize: defaults.fontSize,
+    textAlign: defaults.textAlign || 'left',
+    verticalAlign: defaults.verticalAlign || 'top',
+    groupId: null,
+  }
+}
+
+/** Bounds for a click-drag draw from start → end (artboard local). */
+export function drawnShapeBox(
+  type: DrawTool,
+  start: Point,
+  end: Point,
+  { shiftKey = false, snapOn = false }: { shiftKey?: boolean; snapOn?: boolean } = {},
+): { x: number; y: number; w: number; h: number } {
+  let x1 = start.x
+  let y1 = start.y
+  let x2 = end.x
+  let y2 = end.y
+
+  if (type === 'line') {
+    let dx = x2 - x1
+    let dy = y2 - y1
+    if (shiftKey) {
+      const len = Math.hypot(dx, dy)
+      const angle = Math.atan2(dy, dx)
+      const snapped = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4)
+      dx = Math.cos(snapped) * len
+      dy = Math.sin(snapped) * len
+    }
+    const sx = snap(x1, snapOn)
+    const sy = snap(y1, snapOn)
+    const ex = snap(x1 + dx, snapOn)
+    const ey = snap(y1 + dy, snapOn)
+    return { x: sx, y: sy, w: ex - sx, h: ey - sy }
+  }
+
+  let dx = x2 - x1
+  let dy = y2 - y1
+  if (shiftKey) {
+    const size = Math.max(Math.abs(dx), Math.abs(dy))
+    dx = (dx < 0 ? -1 : 1) * size
+    dy = (dy < 0 ? -1 : 1) * size
+  }
+
+  const box = normalizeRect(x1, y1, dx, dy)
+  const x = snap(box.x, snapOn)
+  const y = snap(box.y, snapOn)
+  const right = snap(box.x + box.w, snapOn)
+  const bottom = snap(box.y + box.h, snapOn)
+  return {
+    x,
+    y,
+    w: Math.max(right - x, MIN_SIZE),
+    h: Math.max(bottom - y, MIN_SIZE),
+  }
+}
+
+/** Create an atomic shape with explicit bounds (from draw tool). */
+export function createDrawnElement(
+  type: DrawTool,
+  box: { x: number; y: number; w: number; h: number },
+  z: number,
+  artboardId: string,
+): WireElement {
+  const defaults = DEFAULTS[type]
+  return {
+    id: uid(),
+    type,
+    name: nextName(type),
+    x: box.x,
+    y: box.y,
+    w: box.w,
+    h: box.h,
     z,
     artboardId,
     fill: defaults.fill,

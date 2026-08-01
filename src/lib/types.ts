@@ -7,6 +7,7 @@ export type AtomicType =
   | 'image'
 
 export type ComposedKind =
+  | 'image'
   | 'input'
   | 'search'
   | 'button'
@@ -25,6 +26,19 @@ export type PlaceTool = PlaceType | { customId: string }
 
 export function isCustomPlace(tool: PlaceTool): tool is { customId: string } {
   return typeof tool === 'object' && tool !== null && 'customId' in tool
+}
+
+/** Top-rail shape tools that stay selected and draw via click-drag. */
+export type DrawTool = Exclude<AtomicType, 'image'>
+
+export function isDrawTool(tool: PlaceTool | null | undefined): tool is DrawTool {
+  return (
+    tool === 'rect' ||
+    tool === 'circle' ||
+    tool === 'triangle' ||
+    tool === 'line' ||
+    tool === 'text'
+  )
 }
 
 export type TextAlign = 'left' | 'middle' | 'right'
@@ -122,6 +136,8 @@ export interface WireframeDocument {
   snapOn: boolean
   elements: WireElement[]
   variables?: DesignVariable[]
+  /** Project-scoped custom components (saved with the .wireframe). */
+  components?: CustomComponentDef[]
 }
 
 export interface ActionMenuItem {
@@ -140,8 +156,3 @@ export interface CustomComponentDef {
   updatedAt?: string
 }
 
-export interface ComponentLibrary {
-  format: 'skeletch-components'
-  version: number
-  components: CustomComponentDef[]
-}
