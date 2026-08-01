@@ -1,5 +1,6 @@
 import { DEFAULTS } from './constants'
-import { drawImageContain, loadHtmlImage } from './fillImage'
+import { drawImageCover, loadHtmlImage } from './fillImage'
+import { pathVerticesToD } from './pathGeometry'
 import type { Artboard, WireElement } from './types'
 
 type ImageCache = Map<string, HTMLImageElement>
@@ -17,7 +18,7 @@ function paintFillImage(
   ctx.save()
   clip()
   ctx.clip()
-  drawImageContain(ctx, img, el.x, el.y, el.w, el.h)
+  drawImageCover(ctx, img, el.x, el.y, el.w, el.h)
   ctx.restore()
 }
 
@@ -292,6 +293,38 @@ function paintShape(ctx: CanvasRenderingContext2D, el: WireElement, images: Imag
 
   if (el.type === 'image') {
     paintImage(ctx, el, images)
+    ctx.restore()
+    return
+  }
+
+  if (el.type === 'path') {
+    const vertices = el.pathVertices || []
+    const d = pathVerticesToD(vertices, Boolean(el.pathClosed))
+    if (!d) {
+      ctx.restore()
+      return
+    }
+    const sw = el.strokeWidth || 0
+    const stroke = el.stroke || '#1a1a1a'
+    const fill = el.fill
+    const sx = el.w / 100
+    const sy = el.h / 100
+    ctx.translate(el.x, el.y)
+    ctx.scale(sx, sy)
+    const path = new Path2D(d)
+    if (el.pathClosed && fill && fill !== 'transparent') {
+      ctx.fillStyle = fill
+      ctx.fill(path)
+    }
+    if (sw > 0) {
+      // Match SVG vectorEffect="non-scaling-stroke"
+      const avgScale = (Math.abs(sx) + Math.abs(sy)) / 2
+      ctx.strokeStyle = stroke
+      ctx.lineWidth = sw / Math.max(avgScale, 0.001)
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      ctx.stroke(path)
+    }
     ctx.restore()
     return
   }

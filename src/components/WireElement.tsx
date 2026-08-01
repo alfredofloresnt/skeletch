@@ -11,6 +11,7 @@ import {
   rotateCursorForHandle,
   type CornerHandle,
 } from '../lib/geometry'
+import { pathVerticesToD } from '../lib/pathGeometry'
 import type { Rect, ResizeHandle, WireElement as WireElementModel } from '../lib/types'
 
 export type { CornerHandle }
@@ -27,7 +28,7 @@ function fillImageStyle(src?: string | null): CSSProperties {
   if (!src) return {}
   return {
     backgroundImage: `url(${JSON.stringify(src)})`,
-    backgroundSize: 'contain',
+    backgroundSize: 'cover',
     backgroundPosition: 'center',
     backgroundRepeat: 'no-repeat',
     backgroundColor: 'transparent',
@@ -341,6 +342,34 @@ export default function WireElement({
         onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
       >
         {!el.fillImage && <ImagePlaceholder stroke={el.stroke} strokeWidth={el.strokeWidth} />}
+      </div>
+    )
+  }
+
+  if (el.type === 'path') {
+    const sw = el.strokeWidth || 0
+    const fill = el.pathClosed && el.fill && el.fill !== 'transparent' ? el.fill : 'none'
+    const d = pathVerticesToD(el.pathVertices || [], Boolean(el.pathClosed))
+    return (
+      <div
+        className={`wire-el wire-el--path${selected ? ' is-selected' : ''}`}
+        style={style}
+        data-id={el.id}
+        onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
+      >
+        <svg className="el-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+          {d ? (
+            <path
+              d={d}
+              fill={fill}
+              stroke={sw > 0 ? el.stroke : 'none'}
+              strokeWidth={sw}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          ) : null}
+        </svg>
       </div>
     )
   }

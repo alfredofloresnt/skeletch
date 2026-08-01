@@ -1,4 +1,5 @@
 import { getBounds, uid } from './geometry'
+import { sanitizePathVertices } from './pathGeometry'
 import type {
   AtomicType,
   CustomComponentDef,
@@ -8,7 +9,7 @@ import type {
   WireElement,
 } from './types'
 
-const ATOMIC: AtomicType[] = ['rect', 'circle', 'triangle', 'line', 'text', 'image']
+const ATOMIC: AtomicType[] = ['rect', 'circle', 'triangle', 'line', 'text', 'image', 'path']
 
 /** `selected` should already be expanded for groups (full atom list). */
 export function selectionToParts(selected: WireElement[]): LayoutPart[] | null {
@@ -39,6 +40,8 @@ export function selectionToParts(selected: WireElement[]): LayoutPart[] | null {
       fontSize: el.fontSize,
       textAlign: el.textAlign,
       verticalAlign: el.verticalAlign,
+      pathClosed: el.pathClosed,
+      pathVertices: el.pathVertices,
     }),
   )
 }
@@ -72,6 +75,8 @@ function sanitizePart(part: LayoutPart): LayoutPart {
     fontSize: part.fontSize,
     textAlign: (part.textAlign || 'left') as TextAlign,
     verticalAlign: (part.verticalAlign || 'top') as VerticalAlign,
+    pathClosed: Boolean(part.pathClosed),
+    pathVertices: sanitizePathVertices(part.pathVertices),
   }
 }
 

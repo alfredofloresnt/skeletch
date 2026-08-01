@@ -1,4 +1,5 @@
 import { GRID_SIZE, MIN_SIZE } from './constants'
+import { pointInPathShape } from './pathGeometry'
 import type { Point, Rect, ResizeHandle, WireElement } from './types'
 
 export function snap(value: number, enabled: boolean, grid = GRID_SIZE): number {
@@ -32,6 +33,8 @@ export function rectsIntersect(a: Rect, b: Rect): boolean {
 type BoxLike = Pick<WireElement, 'type' | 'x' | 'y' | 'w' | 'h'> & {
   strokeWidth?: number
   z?: number
+  pathClosed?: boolean
+  pathVertices?: WireElement['pathVertices']
 }
 
 export function getBounds(elements: BoxLike[]): Rect | null {
@@ -102,6 +105,17 @@ export function pointInElement(px: number, py: number, el: RotatableBox): boolea
     const b = ((y3 - y1) * (x - x3) + (x1 - x3) * (y - y3)) / denom
     const c = 1 - a - b
     return a >= 0 && b >= 0 && c >= 0
+  }
+  if (el.type === 'path' && el.pathVertices?.length) {
+    return pointInPathShape(
+      x - el.x,
+      y - el.y,
+      el.pathVertices,
+      Boolean(el.pathClosed),
+      el.strokeWidth || 2,
+      el.w,
+      el.h,
+    )
   }
   return x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h
 }

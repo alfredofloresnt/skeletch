@@ -16,6 +16,7 @@ export const ELEMENT_TYPES: { type: Exclude<AtomicType, 'image'>; label: string 
   { type: 'circle', label: 'Circle' },
   { type: 'triangle', label: 'Triangle' },
   { type: 'line', label: 'Line' },
+  { type: 'path', label: 'Path' },
   { type: 'text', label: 'Text' },
 ]
 
@@ -77,6 +78,14 @@ export const DEFAULTS: Record<AtomicType, ShapeDefaults> = {
   line: {
     w: 160,
     h: 0,
+    fill: 'transparent',
+    stroke: '#1a1a1a',
+    strokeWidth: 2,
+    opacity: 1,
+  },
+  path: {
+    w: 160,
+    h: 96,
     fill: 'transparent',
     stroke: '#1a1a1a',
     strokeWidth: 2,

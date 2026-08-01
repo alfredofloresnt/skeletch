@@ -1,11 +1,13 @@
 import { DEFAULTS, MIN_SIZE } from './constants'
 import { getBounds, normalizeRect, snap, uid } from './geometry'
+import { fitPathElement } from './pathGeometry'
 import type {
   AtomicType,
   ComposedKind,
   DrawTool,
   LayoutPart,
   LayerTreeRow,
+  PathVertex,
   PlaceType,
   Point,
   Rect,
@@ -383,6 +385,43 @@ export function createDrawnElement(
     fontSize: defaults.fontSize,
     textAlign: defaults.textAlign || 'left',
     verticalAlign: defaults.verticalAlign || 'top',
+    groupId: null,
+  }
+}
+
+/** Create a path from artboard-local vertices (normalized into the element box). */
+export function createPathElement({
+  vertices,
+  closed,
+  z,
+  artboardId,
+}: {
+  vertices: PathVertex[]
+  closed: boolean
+  z: number
+  artboardId: string
+}): WireElement | null {
+  if (vertices.length < 2) return null
+  const fitted = fitPathElement(vertices, closed)
+  if (!fitted) return null
+  const defaults = DEFAULTS.path
+  return {
+    id: uid(),
+    type: 'path',
+    name: nextName('path'),
+    x: fitted.bounds.x,
+    y: fitted.bounds.y,
+    w: fitted.bounds.w,
+    h: fitted.bounds.h,
+    z,
+    artboardId,
+    fill: defaults.fill,
+    stroke: defaults.stroke,
+    strokeWidth: defaults.strokeWidth,
+    opacity: defaults.opacity,
+    cornerRadius: 0,
+    pathClosed: closed,
+    pathVertices: fitted.pathVertices,
     groupId: null,
   }
 }

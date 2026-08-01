@@ -1,5 +1,6 @@
 import { createArtboard } from './artboards'
 import { sanitizeComponents } from './customComponents'
+import { sanitizePathVertices } from './pathGeometry'
 import { sanitizeVariable } from './variables'
 import type {
   Artboard,
@@ -94,6 +95,8 @@ function sanitizeElement(el: WireElement, fallbackArtboardId?: string): WireElem
     fillVar: el.fillVar ?? null,
     fontSizeVar: el.fontSizeVar ?? null,
     cornerRadiusVar: el.cornerRadiusVar ?? null,
+    pathClosed: Boolean(el.pathClosed),
+    pathVertices: sanitizePathVertices(el.pathVertices),
   }
 }
 

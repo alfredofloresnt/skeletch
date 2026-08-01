@@ -5,6 +5,23 @@ export type AtomicType =
   | 'line'
   | 'text'
   | 'image'
+  | 'path'
+
+/** Handle offset relative to the vertex, in the same coordinate space. */
+export interface PathHandle {
+  x: number
+  y: number
+}
+
+/** Cubic Bézier path vertex (anchors + optional in/out handles). */
+export interface PathVertex {
+  x: number
+  y: number
+  /** Incoming handle (toward previous segment). Absent/zero = corner. */
+  in?: PathHandle
+  /** Outgoing handle (toward next segment). Absent/zero = corner. */
+  out?: PathHandle
+}
 
 export type ComposedKind =
   | 'image'
@@ -29,7 +46,7 @@ export function isCustomPlace(tool: PlaceTool): tool is { customId: string } {
 }
 
 /** Top-rail shape tools that stay selected and draw via click-drag. */
-export type DrawTool = Exclude<AtomicType, 'image'>
+export type DrawTool = Exclude<AtomicType, 'image' | 'path'>
 
 export function isDrawTool(tool: PlaceTool | null | undefined): tool is DrawTool {
   return (
@@ -39,6 +56,19 @@ export function isDrawTool(tool: PlaceTool | null | undefined): tool is DrawTool
     tool === 'line' ||
     tool === 'text'
   )
+}
+
+/** Pen tool — multi-click Bézier session, not box-drag. */
+export function isPathTool(tool: PlaceTool | null | undefined): tool is 'path' {
+  return tool === 'path'
+}
+
+/** In-progress pen session (artboard-local vertex coordinates). */
+export interface PenDraft {
+  artboardId: string
+  vertices: PathVertex[]
+  cursor: Point | null
+  draggingHandle: boolean
 }
 
 export type TextAlign = 'left' | 'middle' | 'right'
@@ -78,7 +108,7 @@ export interface LayoutPart {
   /** Degrees, clockwise. */
   rotation?: number
   fill?: string
-  /** Pasted/uploaded image data URL used as fill (object-fit: contain). */
+  /** Pasted/uploaded image data URL used as fill (object-fit: cover). */
   fillImage?: string | null
   stroke?: string
   strokeWidth?: number
@@ -89,6 +119,10 @@ export interface LayoutPart {
   textAlign?: TextAlign
   verticalAlign?: VerticalAlign
   name?: string
+  /** Whether the path closes back to the first vertex. */
+  pathClosed?: boolean
+  /** Path vertices normalized to the element box (0..100). */
+  pathVertices?: PathVertex[]
 }
 
 export interface WireElement extends LayoutPart {

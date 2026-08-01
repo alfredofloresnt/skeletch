@@ -26,6 +26,7 @@ import {
   createDrawnElement,
   createElement,
   createFromParts,
+  createPathElement,
   duplicateElements,
   expandSelectionForGroups,
   groupElements,
@@ -42,8 +43,9 @@ import {
   ungroup,
 } from './lib/elements'
 import { exportArtboardPng } from './lib/exportPng'
-import { canAcceptFillImage, readClipboardImage } from './lib/fillImage'
-import { FRAME_PRESETS, MAX_ZOOM, MIN_ZOOM } from './lib/constants'
+import { canAcceptFillImage, loadHtmlImage, readClipboardImage } from './lib/fillImage'
+import { importSvg, readSvgFromTransfer } from './lib/importSvg'
+import { FRAME_PRESETS, MAX_ZOOM, MIN_SIZE, MIN_ZOOM } from './lib/constants'
 import {
   applyRotationAroundCenter,
   boundsCenter,
@@ -54,6 +56,7 @@ import type {
   Artboard,
   CustomComponentDef,
   DesignVariable,
+  PenDraft,
   PlaceTool,
   Point,
   WireElement,
@@ -74,6 +77,8 @@ import type { SideTab } from './components/SidePanel'
 import './App.css'
 
 const HISTORY_LIMIT = 100
+const DEFAULT_PASTE_IMAGE_W = 320
+const DEFAULT_PASTE_IMAGE_H = 240
 
 type HistorySnapshot = {
   artboards: Artboard[]
@@ -104,6 +109,8 @@ export default function App() {
   const [dragLayerId, setDragLayerId] = useState<string | null>(null)
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
   const [editingTextId, setEditingTextId] = useState<string | null>(null)
+  const [editingPathId, setEditingPathId] = useState<string | null>(null)
+  const [penDraft, setPenDraft] = useState<PenDraft | null>(null)
   const [pan, setPan] = useState<Point>({ x: 80, y: 60 })
   const [zoom, setZoom] = useState(0.7)
   const [paletteDrag, setPaletteDrag] = useState<PaletteDrag | null>(null)
@@ -111,9 +118,11 @@ export default function App() {
   const clipboardRef = useRef<WireElement[]>([])
   const paletteDragRef = useRef<PaletteDrag | null>(null)
   const editingTextIdRef = useRef<string | null>(null)
+  const penDraftRef = useRef<PenDraft | null>(null)
   const componentsRef = useRef(components)
   componentsRef.current = components
   editingTextIdRef.current = editingTextId
+  penDraftRef.current = penDraft
   const historyRef = useRef<HistorySnapshot[]>([])
   const documentRef = useRef<HistorySnapshot | null>(null)
   const [canUndo, setCanUndo] = useState(false)
@@ -164,6 +173,8 @@ export default function App() {
     setSelectedIds(previous.selectedIds)
     setEditingGroupId(previous.editingGroupId)
     setEditingTextId(null)
+    setEditingPathId(null)
+    setPenDraft(null)
     setArtboardSelected(previous.artboardSelected)
     setPlaceTool(null)
     setCanUndo(historyRef.current.length > 0)
@@ -240,6 +251,82 @@ export default function App() {
   const cancelTextEdit = useCallback((id: string) => {
     setEditingTextId((current) => (current === id ? null : current))
   }, [])
+
+  const placeImportedSvg = useCallback(
+    (svgText: string, artboardId: string, center?: Point) => {
+      const board = artboards.find((ab) => ab.id === artboardId)
+      if (!board) return
+
+      let asset
+      try {
+        asset = importSvg(svgText)
+      } catch {
+        return
+      }
+
+      const maxW = board.width * 0.5
+      const maxH = board.height * 0.5
+      const scale = Math.min(1, maxW / asset.width, maxH / asset.height)
+      const w = Math.max(MIN_SIZE, Math.round(asset.width * scale))
+      const h = Math.max(MIN_SIZE, Math.round(asset.height * scale))
+      const cx = center?.x ?? board.width / 2
+      const cy = center?.y ?? board.height / 2
+      const z = nextZ(elementsOnArtboard(elements, board.id))
+      const el = {
+        ...createElement('image', cx, cy, z, snapOn, board.id),
+        x: Math.round(cx - w / 2),
+        y: Math.round(cy - h / 2),
+        w,
+        h,
+        fillImage: asset.dataUrl,
+        fillVar: null,
+        name: 'SVG',
+      }
+
+      recordHistory()
+      setElements((prev) => [...prev, el])
+      setActiveArtboardId(board.id)
+      setSelectedIds([el.id])
+      setArtboardSelected(false)
+      setEditingGroupId(null)
+      setEditingTextId(null)
+      setEditingPathId(null)
+      setPenDraft(null)
+    },
+    [artboards, elements, recordHistory, snapOn],
+  )
+
+  const commitPenPath = useCallback(
+    (closed: boolean) => {
+      const draft = penDraftRef.current
+      if (!draft || draft.vertices.length < 2) {
+        setPenDraft(null)
+        return
+      }
+      const boardEls = (documentRef.current?.elements || []).filter(
+        (el) => el.artboardId === draft.artboardId,
+      )
+      const created = createPathElement({
+        vertices: draft.vertices,
+        closed,
+        z: nextZ(boardEls),
+        artboardId: draft.artboardId,
+      })
+      if (!created) {
+        setPenDraft(null)
+        return
+      }
+      recordHistory()
+      setActiveArtboardId(draft.artboardId)
+      setArtboardSelected(false)
+      setElements((prev) => [...prev, created])
+      setSelectedIds([created.id])
+      setEditingGroupId(null)
+      setEditingPathId(null)
+      setPenDraft(null)
+    },
+    [recordHistory],
+  )
 
   const startPaletteDrag = useCallback(
     (tool: PlaceTool, label: string, clientX: number, clientY: number) => {
@@ -524,6 +611,14 @@ export default function App() {
           setEditingTextId(null)
           return
         }
+        if (editingPathId) {
+          setEditingPathId(null)
+          return
+        }
+        if (penDraft) {
+          setPenDraft(null)
+          return
+        }
         if (editingGroupId) {
           setEditingGroupId(null)
           return
@@ -534,13 +629,48 @@ export default function App() {
         return
       }
 
-      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && selectedIds.length === 1) {
-        const el = elements.find((item) => item.id === selectedIds[0])
-        if (el?.type === 'text') {
+      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
+        if (penDraft && penDraft.vertices.length >= 2) {
           e.preventDefault()
-          setEditingTextId(el.id)
+          commitPenPath(false)
           return
         }
+        if (editingPathId) {
+          e.preventDefault()
+          setEditingPathId(null)
+          return
+        }
+        if (selectedIds.length === 1) {
+          const el = elements.find((item) => item.id === selectedIds[0])
+          if (el?.type === 'text') {
+            e.preventDefault()
+            setEditingTextId(el.id)
+            return
+          }
+          if (el?.type === 'path') {
+            e.preventDefault()
+            setEditingPathId(el.id)
+            return
+          }
+        }
+      }
+
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        penDraft &&
+        !editingTextId
+      ) {
+        e.preventDefault()
+        if (penDraft.vertices.length <= 1) {
+          setPenDraft(null)
+        } else {
+          setPenDraft({
+            ...penDraft,
+            vertices: penDraft.vertices.slice(0, -1),
+            draggingHandle: false,
+          })
+        }
+        return
       }
 
       if ((e.key === 'Delete' || e.key === 'Backspace') && artboardSelected && !selectedIds.length) {
@@ -564,6 +694,7 @@ export default function App() {
         setElements((prev) => prev.filter((el) => !selectedIds.includes(el.id)))
         setSelectedIds([])
         setEditingTextId(null)
+        setEditingPathId(null)
         return
       }
 
@@ -595,6 +726,9 @@ export default function App() {
     selectedIds,
     editingGroupId,
     editingTextId,
+    editingPathId,
+    penDraft,
+    commitPenPath,
     elements,
     recordHistory,
     undo,
@@ -617,24 +751,77 @@ export default function App() {
         return el ? canAcceptFillImage(el) : false
       })
       const data = e.clipboardData
+      const svgText = await readSvgFromTransfer(data)
+      if (svgText) {
+        e.preventDefault()
+        const board = artboards.find((ab) => ab.id === activeArtboardId) || artboards[0]
+        if (board) placeImportedSvg(svgText, board.id)
+        return
+      }
+
       const hasClipboardImage = Boolean(
         data &&
           ([...data.items].some((item) => item.type.startsWith('image/')) ||
             [...data.files].some((file) => file.type.startsWith('image/'))),
       )
 
-      if (fillableIds.length && hasClipboardImage) {
+      if (hasClipboardImage && (fillableIds.length || selectedIds.length === 0)) {
         e.preventDefault()
         const dataUrl = await readClipboardImage(data)
         if (!dataUrl) return
         recordHistory()
-        setElements((prev) =>
-          prev.map((el) =>
-            fillableIds.includes(el.id)
-              ? { ...el, fillImage: dataUrl, fillVar: null }
-              : el,
+
+        if (fillableIds.length) {
+          setElements((prev) =>
+            prev.map((el) =>
+              fillableIds.includes(el.id)
+                ? { ...el, fillImage: dataUrl, fillVar: null }
+                : el,
+            ),
+          )
+          return
+        }
+
+        // No selection: create a rectangle filled with the pasted image.
+        const board = artboards.find((ab) => ab.id === activeArtboardId) || artboards[0]
+        if (!board) return
+        let w = DEFAULT_PASTE_IMAGE_W
+        let h = DEFAULT_PASTE_IMAGE_H
+        try {
+          const img = await loadHtmlImage(dataUrl)
+          const iw = img.naturalWidth || img.width
+          const ih = img.naturalHeight || img.height
+          if (iw > 0 && ih > 0) {
+            const maxW = board.width * 0.5
+            const maxH = board.height * 0.5
+            const scale = Math.min(1, maxW / iw, maxH / ih)
+            w = Math.max(MIN_SIZE, Math.round(iw * scale))
+            h = Math.max(MIN_SIZE, Math.round(ih * scale))
+          }
+        } catch {
+          /* keep defaults */
+        }
+        const boardEls = elementsOnArtboard(elements, board.id)
+        const el = {
+          ...createDrawnElement(
+            'rect',
+            {
+              x: Math.round((board.width - w) / 2),
+              y: Math.round((board.height - h) / 2),
+              w,
+              h,
+            },
+            nextZ(boardEls),
+            board.id,
           ),
-        )
+          fillImage: dataUrl,
+          fillVar: null,
+        }
+        setElements((prev) => [...prev, el])
+        setSelectedIds([el.id])
+        setArtboardSelected(false)
+        setEditingGroupId(null)
+        setEditingTextId(null)
         return
       }
 
@@ -659,7 +846,15 @@ export default function App() {
 
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
-  }, [selectedIds, elements, editingTextId, recordHistory, activeArtboardId])
+  }, [
+    selectedIds,
+    elements,
+    editingTextId,
+    recordHistory,
+    activeArtboardId,
+    artboards,
+    placeImportedSvg,
+  ])
 
   const handleUngroup = (groupId: string) => {
     recordHistory()
@@ -819,7 +1014,11 @@ export default function App() {
           tab={sideTab}
           onTab={setSideTab}
           placeTool={placeTool}
-          onPlaceTool={setPlaceTool}
+          onPlaceTool={(tool) => {
+            setPenDraft(null)
+            setEditingPathId(null)
+            setPlaceTool(tool)
+          }}
           onPaletteDragStart={startPaletteDrag}
           components={components}
           onRenameComponent={(id, name) => {
@@ -929,7 +1128,10 @@ export default function App() {
             }}
             onEditStart={recordHistory}
             onPlace={place}
-            onClearPlace={() => setPlaceTool(null)}
+            onClearPlace={() => {
+              setPenDraft(null)
+              setPlaceTool(null)
+            }}
             pan={pan}
             zoom={zoom}
             onPanChange={setPan}
@@ -940,6 +1142,15 @@ export default function App() {
             onEditText={setEditingTextId}
             onCommitText={commitTextEdit}
             onCancelTextEdit={cancelTextEdit}
+            editingPathId={editingPathId}
+            onEditPath={setEditingPathId}
+            onUpdatePathElement={(id, patch) => {
+              setElements((prev) => prev.map((el) => (el.id === id ? { ...el, ...patch } : el)))
+            }}
+            penDraft={penDraft}
+            onPenDraftChange={setPenDraft}
+            onCommitPenPath={commitPenPath}
+            onImportSvg={placeImportedSvg}
             onGroup={handleGroup}
             onUngroup={handleUngroup}
           />

@@ -197,6 +197,24 @@ function IconLine() {
   )
 }
 
+function IconPath() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <path
+        d="M5 17 C8 17 9 7 12 7 S16 17 19 17"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="5" cy="17" r="1.4" fill="currentColor" />
+      <circle cx="12" cy="7" r="1.4" fill="currentColor" />
+      <circle cx="19" cy="17" r="1.4" fill="currentColor" />
+    </svg>
+  )
+}
+
 function IconText() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden>
@@ -281,6 +299,7 @@ const SHAPE_ICONS: Record<string, () => ReactNode> = {
   circle: IconCircle,
   triangle: IconTriangle,
   line: IconLine,
+  path: IconPath,
   text: IconText,
 }
 

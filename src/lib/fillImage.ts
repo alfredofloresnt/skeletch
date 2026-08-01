@@ -25,8 +25,8 @@ export function readClipboardImage(data: DataTransfer | null): Promise<string | 
   })
 }
 
-/** Draw an image inside a box with object-fit: contain. */
-export function drawImageContain(
+/** Draw an image inside a box with object-fit: cover. */
+export function drawImageCover(
   ctx: CanvasRenderingContext2D,
   img: HTMLImageElement,
   x: number,
@@ -37,7 +37,7 @@ export function drawImageContain(
   const iw = img.naturalWidth || img.width
   const ih = img.naturalHeight || img.height
   if (!iw || !ih || w <= 0 || h <= 0) return
-  const scale = Math.min(w / iw, h / ih)
+  const scale = Math.max(w / iw, h / ih)
   const dw = iw * scale
   const dh = ih * scale
   ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh)

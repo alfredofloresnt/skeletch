@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import {
   artboardAtPoint,
   elementWorldRect,
@@ -30,18 +37,33 @@ import {
   toElementLocal,
   type CornerHandle,
 } from '../lib/geometry'
+import {
+  denormalizePathVertices,
+  fitPathElement,
+  isNearVertex,
+  normalizePathVertices,
+  pathVerticesToD,
+  snapPointTo45,
+} from '../lib/pathGeometry'
+import { hasSvgTransfer, readSvgFromTransfer } from '../lib/importSvg'
 import type {
   Artboard,
   DrawTool,
+  PathVertex,
+  PenDraft,
   PlaceTool,
   Point,
   Rect,
   ResizeHandle,
   WireElement as WireElementModel,
 } from '../lib/types'
-import { isDrawTool } from '../lib/types'
+import { isDrawTool, isPathTool } from '../lib/types'
 import ActionMenu from './ActionMenu'
+import PathEditOverlay from './PathEditOverlay'
 import WireElement, { SelectionOverlay } from './WireElement'
+
+const PEN_CLOSE_SCREEN_PX = 10
+const PEN_HANDLE_DRAG_PX = 4
 
 type DrawPreview = {
   artboardId: string
@@ -104,6 +126,78 @@ function DrawPreviewOverlay({ preview }: { preview: DrawPreview }) {
       className={`draw-preview draw-preview--${tool}`}
       style={{ left: x, top: y, width: Math.max(w, 1), height: Math.max(h, 1) }}
     />
+  )
+}
+
+function PenDraftOverlay({
+  draft,
+  zoom,
+}: {
+  draft: PenDraft
+  zoom: number
+}) {
+  const { vertices, cursor, draggingHandle } = draft
+  const closeThreshold = PEN_CLOSE_SCREEN_PX / zoom
+  const canClose = vertices.length >= 3
+  const nearClose =
+    canClose && cursor ? isNearVertex(cursor, vertices[0], closeThreshold) : false
+
+  const previewVerts: PathVertex[] = [...vertices]
+  if (cursor && !draggingHandle && vertices.length) {
+    previewVerts.push({ x: cursor.x, y: cursor.y })
+  }
+  const d = pathVerticesToD(previewVerts, false)
+  const last = vertices[vertices.length - 1]
+
+  return (
+    <div className="pen-draft-overlay">
+      {d ? (
+        <svg className="pen-draft-svg" style={{ overflow: 'visible' }}>
+          <path
+            d={d}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+      ) : null}
+      {draggingHandle && last?.out ? (
+        <>
+          <div
+            className="path-edit-handle-line"
+            style={{
+              left: last.x,
+              top: last.y,
+              width: Math.hypot(last.out.x, last.out.y),
+              transform: `rotate(${Math.atan2(last.out.y, last.out.x)}rad)`,
+            }}
+          />
+          <div
+            className="path-edit-handle-line"
+            style={{
+              left: last.x,
+              top: last.y,
+              width: Math.hypot(last.out.x, last.out.y),
+              transform: `rotate(${Math.atan2(-last.out.y, -last.out.x)}rad)`,
+            }}
+          />
+        </>
+      ) : null}
+      {vertices.map((v, i) => (
+        <div
+          key={i}
+          className={`pen-draft-anchor${i === 0 && nearClose ? ' is-close-target' : ''}`}
+          style={{
+            left: v.x,
+            top: v.y,
+            transform: `translate(-50%, -50%) scale(${1 / zoom})`,
+          }}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -189,6 +283,14 @@ type Interaction =
       shiftKey: boolean
       historyRecorded?: boolean
     }
+  | {
+      mode: 'pen-handle'
+      artboardId: string
+      startClient: Point
+      vertexIndex: number
+      shiftKey: boolean
+      historyRecorded?: boolean
+    }
 
 type CanvasProps = {
   artboards: Artboard[]
@@ -234,6 +336,13 @@ type CanvasProps = {
   onEditText: (id: string) => void
   onCommitText: (id: string, text: string) => void
   onCancelTextEdit: (id: string) => void
+  editingPathId: string | null
+  onEditPath: (id: string | null) => void
+  onUpdatePathElement: (id: string, patch: Partial<WireElementModel>) => void
+  penDraft: PenDraft | null
+  onPenDraftChange: (draft: PenDraft | null) => void
+  onCommitPenPath: (closed: boolean) => void
+  onImportSvg: (svgText: string, artboardId: string, center?: Point) => void
   onGroup?: (ids?: string[]) => void
   onUngroup?: (groupId: string) => void
 }
@@ -268,6 +377,13 @@ export default function Canvas({
   onEditText,
   onCommitText,
   onCancelTextEdit,
+  editingPathId,
+  onEditPath,
+  onUpdatePathElement,
+  penDraft,
+  onPenDraftChange,
+  onCommitPenPath,
+  onImportSvg,
   onGroup,
   onUngroup,
 }: CanvasProps) {
@@ -276,10 +392,15 @@ export default function Canvas({
   const [panning, setPanning] = useState(false)
   const [marquee, setMarquee] = useState<Rect | null>(null)
   const [drawPreview, setDrawPreview] = useState<DrawPreview | null>(null)
+  const [svgDragOver, setSvgDragOver] = useState(false)
   const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
   const [draggingElements, setDraggingElements] = useState(false)
   const interaction = useRef<Interaction | null>(null)
   const lastClick = useRef<{ id: string | null; time: number }>({ id: null, time: 0 })
+  const lastEmptyClick = useRef(0)
+  const penDraftRef = useRef(penDraft)
+  penDraftRef.current = penDraft
+  const pathEditLocalRef = useRef<PathVertex[] | null>(null)
   const viewRef = useRef({ pan, zoom })
   const pinchActiveRef = useRef(false)
   const pinchIdleTimer = useRef(0)
@@ -289,6 +410,20 @@ export default function Canvas({
     viewRef.current = { pan, zoom }
   }, [pan, zoom])
 
+  useEffect(() => {
+    const blockFileNavigation = (e: DragEvent) => {
+      if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) {
+        e.preventDefault()
+      }
+    }
+    window.addEventListener('dragover', blockFileNavigation)
+    window.addEventListener('drop', blockFileNavigation)
+    return () => {
+      window.removeEventListener('dragover', blockFileNavigation)
+      window.removeEventListener('drop', blockFileNavigation)
+    }
+  }, [])
+
   const boardMap = getArtboardMap(artboards)
   const selected = elements.filter((e) => selectedIds.includes(e.id))
   const selectedBoardIds = [...new Set(selected.map((el) => el.artboardId))]
@@ -296,7 +431,9 @@ export default function Canvas({
   const selectionBoard = singleBoardSelection ? boardMap.get(singleBoardSelection) : null
   const bounds = selected.length && selectionBoard ? getBounds(selected) : null
   const groupSelected = sharedGroupId(elements, selectedIds)
-  const showGroupResize = Boolean(bounds && (groupSelected || selected.length === 1))
+  const showGroupResize = Boolean(
+    bounds && (groupSelected || selected.length === 1) && !editingPathId,
+  )
   const singleRect =
     !groupSelected && selected.length === 1 && selected[0].type === 'rect' ? selected[0] : null
 
@@ -458,6 +595,26 @@ export default function Canvas({
     return { board, local }
   }
 
+  const onSvgDragOver = (e: ReactDragEvent<HTMLDivElement>) => {
+    if (!hasSvgTransfer(e.dataTransfer)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setSvgDragOver(true)
+  }
+
+  const onSvgDrop = async (e: ReactDragEvent<HTMLDivElement>) => {
+    if (!hasSvgTransfer(e.dataTransfer)) return
+    e.preventDefault()
+    e.stopPropagation()
+    setSvgDragOver(false)
+    const svgText = await readSvgFromTransfer(e.dataTransfer)
+    if (!svgText) return
+    const world = screenToWorld(e.clientX, e.clientY, getStageRect(), pan, zoom)
+    const target = resolvePlaceTarget(world)
+    if (!target) return
+    onImportSvg(svgText, target.board.id, target.local)
+  }
+
   const onStagePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button === 1 || (e.button === 0 && spaceDown)) {
       e.preventDefault()
@@ -482,13 +639,94 @@ export default function Canvas({
       return
     }
 
+    if (editingPathId) {
+      onEditPath(null)
+      interaction.current = null
+      return
+    }
+
     const rect = getStageRect()
     const world = screenToWorld(e.clientX, e.clientY, rect, pan, zoom)
 
     if (placeTool) {
       const target = resolvePlaceTarget(world)
       if (!target) {
-        if (!isDrawTool(placeTool)) onClearPlace()
+        if (!isDrawTool(placeTool) && !isPathTool(placeTool)) onClearPlace()
+        return
+      }
+
+      if (isPathTool(placeTool)) {
+        onActiveArtboard(target.board.id)
+        onArtboardSelected(false)
+        onSelect([])
+        onEditGroup(null)
+
+        const draft = penDraftRef.current
+        const closeThreshold = PEN_CLOSE_SCREEN_PX / zoom
+        let point = { ...target.local }
+        if (e.shiftKey && draft?.vertices.length) {
+          const prev = draft.vertices[draft.vertices.length - 1]
+          point = snapPointTo45(prev, point)
+        }
+        if (snapOn) {
+          point = { x: snap(point.x, true), y: snap(point.y, true) }
+        }
+
+        // Double-click empty finishes an open path
+        const now = Date.now()
+        const emptyDouble = now - lastEmptyClick.current < 350
+        lastEmptyClick.current = now
+        if (
+          emptyDouble &&
+          draft &&
+          draft.artboardId === target.board.id &&
+          draft.vertices.length >= 2 &&
+          !(draft.vertices.length >= 3 && isNearVertex(point, draft.vertices[0], closeThreshold))
+        ) {
+          onCommitPenPath(false)
+          return
+        }
+
+        if (draft && draft.artboardId === target.board.id) {
+          if (
+            draft.vertices.length >= 3 &&
+            isNearVertex(point, draft.vertices[0], closeThreshold)
+          ) {
+            onCommitPenPath(true)
+            return
+          }
+          const nextVerts = [...draft.vertices, { x: point.x, y: point.y }]
+          onPenDraftChange({
+            artboardId: target.board.id,
+            vertices: nextVerts,
+            cursor: point,
+            draggingHandle: true,
+          })
+          interaction.current = {
+            mode: 'pen-handle',
+            artboardId: target.board.id,
+            startClient: { x: e.clientX, y: e.clientY },
+            vertexIndex: nextVerts.length - 1,
+            shiftKey: e.shiftKey,
+          }
+          e.currentTarget.setPointerCapture(e.pointerId)
+          return
+        }
+
+        onPenDraftChange({
+          artboardId: target.board.id,
+          vertices: [{ x: point.x, y: point.y }],
+          cursor: point,
+          draggingHandle: true,
+        })
+        interaction.current = {
+          mode: 'pen-handle',
+          artboardId: target.board.id,
+          startClient: { x: e.clientX, y: e.clientY },
+          vertexIndex: 0,
+          shiftKey: e.shiftKey,
+        }
+        e.currentTarget.setPointerCapture(e.pointerId)
         return
       }
 
@@ -604,8 +842,8 @@ export default function Canvas({
 
   const onElementPointerDown = (e: ReactPointerEvent, id: string) => {
     if (spaceDown || e.button === 1) return
-    // Draw tools paint over existing elements (bubble to stage).
-    if (isDrawTool(placeTool)) return
+    // Draw / pen tools paint over existing elements (bubble to stage).
+    if (isDrawTool(placeTool) || isPathTool(placeTool)) return
     e.stopPropagation()
     e.preventDefault()
 
@@ -620,6 +858,11 @@ export default function Canvas({
       return
     }
 
+    if (editingPathId === id) {
+      e.stopPropagation()
+      return
+    }
+
     const now = Date.now()
     const isDouble = lastClick.current.id === id && now - lastClick.current.time < 350
     lastClick.current = { id, time: now }
@@ -628,6 +871,12 @@ export default function Canvas({
 
     if (isDouble && el?.type === 'text') {
       onEditText(id)
+      onSelect([id])
+      return
+    }
+
+    if (isDouble && el?.type === 'path') {
+      onEditPath(id)
       onSelect([id])
       return
     }
@@ -758,6 +1007,22 @@ export default function Canvas({
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const ix = interaction.current
+    const rect = getStageRect()
+    const world = screenToWorld(e.clientX, e.clientY, rect, pan, zoom)
+
+    // Rubber-band cursor while pen drafting (no active pointer capture)
+    if (!ix && isPathTool(placeTool) && penDraftRef.current) {
+      const draft = penDraftRef.current
+      const ab = boardMap.get(draft.artboardId)
+      if (!ab) return
+      let local = worldToLocal(ab, world)
+      if (e.shiftKey && draft.vertices.length) {
+        local = snapPointTo45(draft.vertices[draft.vertices.length - 1], local)
+      }
+      onPenDraftChange({ ...draft, cursor: local })
+      return
+    }
+
     if (!ix) return
     const recordEdit = () => {
       if (ix.historyRecorded) return
@@ -772,9 +1037,6 @@ export default function Canvas({
       })
       return
     }
-
-    const rect = getStageRect()
-    const world = screenToWorld(e.clientX, e.clientY, rect, pan, zoom)
 
     if (ix.mode === 'marquee') {
       const x = Math.min(ix.startX, world.x)
@@ -953,11 +1215,57 @@ export default function Canvas({
         tool: ix.tool,
         ...box,
       })
+      return
+    }
+
+    if (ix.mode === 'pen-handle') {
+      const draft = penDraftRef.current
+      const ab = boardMap.get(ix.artboardId)
+      if (!draft || !ab) return
+      let local = worldToLocal(ab, world)
+      const dx = e.clientX - ix.startClient.x
+      const dy = e.clientY - ix.startClient.y
+      const dragged = dx * dx + dy * dy >= PEN_HANDLE_DRAG_PX * PEN_HANDLE_DRAG_PX
+      const verts = draft.vertices.map((v) => ({
+        ...v,
+        in: v.in ? { ...v.in } : undefined,
+        out: v.out ? { ...v.out } : undefined,
+      }))
+      const v = verts[ix.vertexIndex]
+      if (!v) return
+      if (dragged) {
+        if (e.shiftKey && ix.vertexIndex > 0) {
+          local = snapPointTo45(verts[ix.vertexIndex - 1], local)
+        }
+        const out = { x: local.x - v.x, y: local.y - v.y }
+        v.out = out
+        v.in = { x: -out.x, y: -out.y }
+      }
+      onPenDraftChange({
+        artboardId: draft.artboardId,
+        vertices: verts,
+        cursor: local,
+        draggingHandle: true,
+      })
     }
   }
 
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     const ix = interaction.current
+    if (ix?.mode === 'pen-handle') {
+      const draft = penDraftRef.current
+      if (draft) {
+        onPenDraftChange({
+          ...draft,
+          draggingHandle: false,
+          cursor: draft.vertices[draft.vertices.length - 1]
+            ? { ...draft.vertices[draft.vertices.length - 1] }
+            : draft.cursor,
+        })
+      }
+      interaction.current = null
+      return
+    }
     if (ix?.mode === 'draw') {
       const ab = boardMap.get(ix.artboardId)
       const dx = e.clientX - ix.startClient.x
@@ -1058,12 +1366,17 @@ export default function Canvas({
   return (
     <div
       ref={stageRef}
-      className="canvas-stage"
+      className={`canvas-stage${svgDragOver ? ' is-svg-drag-over' : ''}`}
       style={{ cursor }}
       onPointerDown={onStagePointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onDragOver={onSvgDragOver}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setSvgDragOver(false)
+      }}
+      onDrop={onSvgDrop}
       onContextMenu={(e) => {
         const rect = getStageRect()
         const world = screenToWorld(e.clientX, e.clientY, rect, pan, zoom)
@@ -1143,7 +1456,54 @@ export default function Canvas({
                 {drawPreview && drawPreview.artboardId === ab.id && (
                   <DrawPreviewOverlay preview={drawPreview} />
                 )}
-                {showGroupResize && boardBounds && !editingTextId && (
+                {penDraft && penDraft.artboardId === ab.id && (
+                  <PenDraftOverlay draft={penDraft} zoom={zoom} />
+                )}
+                {editingPathId &&
+                  (() => {
+                    const pathEl = boardEls.find((el) => el.id === editingPathId)
+                    if (!pathEl || pathEl.type !== 'path' || !pathEl.pathVertices?.length) {
+                      return null
+                    }
+                    const localVerts = denormalizePathVertices(pathEl.pathVertices, {
+                      x: pathEl.x,
+                      y: pathEl.y,
+                      w: pathEl.w,
+                      h: pathEl.h,
+                    })
+                    return (
+                      <PathEditOverlay
+                        vertices={localVerts}
+                        zoom={zoom}
+                        onDragStart={() => {
+                          pathEditLocalRef.current = localVerts
+                          onEditStart()
+                        }}
+                        onDrag={(verts) => {
+                          pathEditLocalRef.current = verts
+                          const box = { x: pathEl.x, y: pathEl.y, w: pathEl.w, h: pathEl.h }
+                          onUpdatePathElement(pathEl.id, {
+                            pathVertices: normalizePathVertices(verts, box),
+                          })
+                        }}
+                        onDragEnd={() => {
+                          const local = pathEditLocalRef.current
+                          pathEditLocalRef.current = null
+                          if (!local?.length) return
+                          const fitted = fitPathElement(local, Boolean(pathEl.pathClosed))
+                          if (!fitted) return
+                          onUpdatePathElement(pathEl.id, {
+                            x: fitted.bounds.x,
+                            y: fitted.bounds.y,
+                            w: fitted.bounds.w,
+                            h: fitted.bounds.h,
+                            pathVertices: fitted.pathVertices,
+                          })
+                        }}
+                      />
+                    )
+                  })()}
+                {showGroupResize && boardBounds && !editingTextId && !editingPathId && (
                   <SelectionOverlay
                     bounds={boardBounds}
                     zoom={zoom}
@@ -1160,7 +1520,7 @@ export default function Canvas({
                     }
                   />
                 )}
-                {!showGroupResize && selected.length > 1 && boardBounds && (
+                {!showGroupResize && selected.length > 1 && boardBounds && !editingPathId && (
                   <div
                     className="selection-overlay selection-overlay--multi"
                     style={{
@@ -1190,11 +1550,17 @@ export default function Canvas({
       <div className="canvas-hint">
         {editingTextId
           ? 'Typing · Esc to cancel · Click away to commit'
-          : editingGroupId
-            ? 'Editing group atoms · Esc to exit'
-            : isDrawTool(placeTool)
-              ? 'Click-drag to draw · Shift constrains · Esc for Select'
-              : 'Select · Drag to move · Shift-drag marquee · Esc clears selection'}
+          : editingPathId
+            ? 'Editing path · Drag anchors/handles · Esc to exit'
+            : penDraft
+              ? 'Path · Click anchors · Drag for curves · Enter to finish · Esc cancels'
+              : editingGroupId
+                ? 'Editing group atoms · Esc to exit'
+                : isPathTool(placeTool)
+                  ? 'Path · Click to place anchors · Drag for curves · Esc for Select'
+                  : isDrawTool(placeTool)
+                    ? 'Click-drag to draw · Shift constrains · Esc for Select'
+                    : 'Select · Drag to move · Shift-drag marquee · Esc clears selection'}
       </div>
       {menu && (
         <ActionMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
