@@ -1124,6 +1124,31 @@ textarea {
   pointer-events: auto;
 }
 
+.wire-el--text.is-editing {
+  overflow: visible;
+  cursor: text;
+  z-index: 10000;
+  outline: 1px solid var(--select);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.wire-el-text-editor {
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  font-family: inherit;
+  overflow: hidden;
+  cursor: text;
+  flex: 0 0 auto;
+  align-self: stretch;
+}
+
 .selection-overlay {
   position: absolute;
   border: 1px solid var(--select);

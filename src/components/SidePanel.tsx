@@ -145,6 +145,20 @@ function PaletteButton({
   )
 }
 
+function IconSelect() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden>
+      <path
+        d="M6.5 4.5 L6.5 18.5 L10.5 14.5 L13 20 L15.5 19 L13 13.5 L18.5 13.5 Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="miter"
+      />
+    </svg>
+  )
+}
+
 function IconRect() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden>
@@ -534,12 +548,24 @@ export default function SidePanel({
     onPlaceTool(active ? null : tool)
   }
 
+  const selectActive = placeTool == null
   const drawerTitle = tab ? PANEL_META[tab].label : ''
 
   return (
     <aside className={`side-panel${tab ? ' has-drawer' : ''}`}>
       <div className="tool-rail" role="toolbar" aria-label="Tools">
         <div className="tool-rail-group">
+          <Tooltip label="Select">
+            <button
+              type="button"
+              className={`tool-rail-btn${selectActive ? ' is-active' : ''}`}
+              aria-label="Select"
+              aria-pressed={selectActive}
+              onClick={() => onPlaceTool(null)}
+            >
+              <IconSelect />
+            </button>
+          </Tooltip>
           {ELEMENT_TYPES.map((item) => {
             const Icon = SHAPE_ICONS[item.type]
             const active = toolsEqual(placeTool, item.type)

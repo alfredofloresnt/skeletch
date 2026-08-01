@@ -230,6 +230,10 @@ type CanvasProps = {
   onViewChange: (next: { pan?: Point; zoom?: number }) => void
   editingGroupId: string | null
   onEditGroup: (groupId: string | null) => void
+  editingTextId: string | null
+  onEditText: (id: string) => void
+  onCommitText: (id: string, text: string) => void
+  onCancelTextEdit: (id: string) => void
   onGroup?: (ids?: string[]) => void
   onUngroup?: (groupId: string) => void
 }
@@ -260,6 +264,10 @@ export default function Canvas({
   onViewChange,
   editingGroupId,
   onEditGroup,
+  editingTextId,
+  onEditText,
+  onCommitText,
+  onCancelTextEdit,
   onGroup,
   onUngroup,
 }: CanvasProps) {
@@ -466,6 +474,14 @@ export default function Canvas({
 
     if (e.button !== 0) return
 
+    // The first canvas click while typing only commits the current text.
+    // It must not also trigger the still-active draw tool.
+    if (editingTextId) {
+      interaction.current = null
+      setDrawPreview(null)
+      return
+    }
+
     const rect = getStageRect()
     const world = screenToWorld(e.clientX, e.clientY, rect, pan, zoom)
 
@@ -599,12 +615,22 @@ export default function Canvas({
       onArtboardSelected(false)
     }
 
+    if (editingTextId === id) {
+      e.stopPropagation()
+      return
+    }
+
     const now = Date.now()
-    const isDouble =
-      lastClick.current.id === id && now - lastClick.current.time < 350 && Boolean(el?.groupId)
+    const isDouble = lastClick.current.id === id && now - lastClick.current.time < 350
     lastClick.current = { id, time: now }
 
     const additive = e.metaKey || e.ctrlKey
+
+    if (isDouble && el?.type === 'text') {
+      onEditText(id)
+      onSelect([id])
+      return
+    }
 
     if (isDouble && el?.groupId) {
       onEditGroup(el.groupId)
@@ -1106,7 +1132,10 @@ export default function Canvas({
                       key={el.id}
                       el={el}
                       selected={selectedIds.includes(el.id)}
+                      editing={editingTextId === el.id}
                       onPointerDown={onElementPointerDown}
+                      onCommitText={onCommitText}
+                      onCancelTextEdit={onCancelTextEdit}
                       dimmed={dimmed}
                     />
                   )
@@ -1114,7 +1143,7 @@ export default function Canvas({
                 {drawPreview && drawPreview.artboardId === ab.id && (
                   <DrawPreviewOverlay preview={drawPreview} />
                 )}
-                {showGroupResize && boardBounds && (
+                {showGroupResize && boardBounds && !editingTextId && (
                   <SelectionOverlay
                     bounds={boardBounds}
                     zoom={zoom}
@@ -1159,11 +1188,13 @@ export default function Canvas({
         )}
       </div>
       <div className="canvas-hint">
-        {editingGroupId
-          ? 'Editing group atoms · Esc to exit'
-          : isDrawTool(placeTool)
-            ? 'Click-drag to draw · Shift constrains · Esc to leave tool'
-            : 'Drag label to move artboard · Drag elements between boards · Pinch zoom · Shift-drag select'}
+        {editingTextId
+          ? 'Typing · Esc to cancel · Click away to commit'
+          : editingGroupId
+            ? 'Editing group atoms · Esc to exit'
+            : isDrawTool(placeTool)
+              ? 'Click-drag to draw · Shift constrains · Esc for Select'
+              : 'Select · Drag to move · Shift-drag marquee · Esc clears selection'}
       </div>
       {menu && (
         <ActionMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />

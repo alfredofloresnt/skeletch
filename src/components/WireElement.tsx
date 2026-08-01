@@ -1,4 +1,10 @@
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { DEFAULTS } from '../lib/constants'
 import {
   resizeCursorForHandle,
@@ -60,14 +66,132 @@ function ImagePlaceholder({
   )
 }
 
+function TextWireElement({
+  el,
+  style,
+  selected,
+  editing,
+  onPointerDown,
+  onCommitText,
+  onCancelTextEdit,
+}: {
+  el: WireElementModel
+  style: CSSProperties
+  selected?: boolean
+  editing?: boolean
+  onPointerDown?: (e: ReactPointerEvent, id: string) => void
+  onCommitText?: (id: string, text: string) => void
+  onCancelTextEdit?: (id: string) => void
+}) {
+  const vAlign = el.verticalAlign || 'top'
+  const [draft, setDraft] = useState(el.text || '')
+  const committed = useRef(false)
+  const areaRef = useRef<HTMLTextAreaElement>(null)
+  const editSession = editing ? `${el.id}:${el.text || ''}` : null
+
+  useEffect(() => {
+    if (!editSession) return
+    const text = editSession.slice(editSession.indexOf(':') + 1)
+    setDraft(text)
+    committed.current = false
+    const timer = window.setTimeout(() => {
+      const node = areaRef.current
+      if (!node) return
+      node.focus()
+      node.select()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [editSession])
+
+  // Keep editor height to content so parent flex vertical-align matches committed text.
+  useEffect(() => {
+    if (!editing) return
+    const node = areaRef.current
+    if (!node) return
+    const min = (el.fontSize || 16) * 1.2
+    node.style.height = '0px'
+    node.style.height = `${Math.max(node.scrollHeight, min)}px`
+  }, [editing, draft, el.fontSize, el.w, el.textAlign, el.verticalAlign])
+
+  const textStyle: CSSProperties = {
+    fontSize: el.fontSize,
+    color: el.fill,
+    lineHeight: 1.2,
+    wordBreak: 'break-word',
+    display: 'block',
+    width: '100%',
+    textAlign: el.textAlign === 'middle' ? 'center' : el.textAlign || 'left',
+  }
+
+  const confirm = () => {
+    if (committed.current) return
+    committed.current = true
+    onCommitText?.(el.id, draft)
+  }
+
+  const cancel = () => {
+    if (committed.current) return
+    committed.current = true
+    onCancelTextEdit?.(el.id)
+  }
+
+  return (
+    <div
+      className={`wire-el wire-el--text${selected ? ' is-selected' : ''}${editing ? ' is-editing' : ''}`}
+      style={{
+        ...style,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent:
+          vAlign === 'middle' ? 'center' : vAlign === 'bottom' ? 'flex-end' : 'flex-start',
+      }}
+      data-id={el.id}
+      onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
+    >
+      {editing ? (
+        <textarea
+          ref={areaRef}
+          aria-label="Edit text"
+          className="wire-el-text-editor"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={confirm}
+          onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              cancel()
+            }
+          }}
+          style={textStyle}
+        />
+      ) : (
+        <span style={textStyle}>{el.text || 'Text'}</span>
+      )}
+    </div>
+  )
+}
+
 type WireElementProps = {
   el: WireElementModel
   selected?: boolean
+  editing?: boolean
   onPointerDown?: (e: ReactPointerEvent, id: string) => void
+  onCommitText?: (id: string, text: string) => void
+  onCancelTextEdit?: (id: string) => void
   dimmed?: boolean
 }
 
-export default function WireElement({ el, selected, onPointerDown, dimmed }: WireElementProps) {
+export default function WireElement({
+  el,
+  selected,
+  editing,
+  onPointerDown,
+  onCommitText,
+  onCancelTextEdit,
+  dimmed,
+}: WireElementProps) {
   const style: CSSProperties = {
     left: el.x,
     top: el.y,
@@ -115,34 +239,16 @@ export default function WireElement({ el, selected, onPointerDown, dimmed }: Wir
   }
 
   if (el.type === 'text') {
-    const vAlign = el.verticalAlign || 'top'
     return (
-      <div
-        className={`wire-el wire-el--text${selected ? ' is-selected' : ''}`}
-        style={{
-          ...style,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent:
-            vAlign === 'middle' ? 'center' : vAlign === 'bottom' ? 'flex-end' : 'flex-start',
-        }}
-        data-id={el.id}
-        onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
-      >
-        <span
-          style={{
-            fontSize: el.fontSize,
-            color: el.fill,
-            lineHeight: 1.2,
-            wordBreak: 'break-word',
-            display: 'block',
-            width: '100%',
-            textAlign: el.textAlign === 'middle' ? 'center' : el.textAlign || 'left',
-          }}
-        >
-          {el.text || 'Text'}
-        </span>
-      </div>
+      <TextWireElement
+        el={el}
+        style={style}
+        selected={selected}
+        editing={editing}
+        onPointerDown={onPointerDown}
+        onCommitText={onCommitText}
+        onCancelTextEdit={onCancelTextEdit}
+      />
     )
   }
 

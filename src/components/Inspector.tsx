@@ -383,12 +383,6 @@ export default function Inspector({
 
       {el.type === 'text' && (
         <div className="inspector-section">
-          <label className="field-label">Text</label>
-          <textarea
-            rows={3}
-            value={el.text || ''}
-            onChange={(e) => set({ text: e.target.value })}
-          />
           <label className="field-label">Font size</label>
           <VariableNumberInput
             label="Font size"

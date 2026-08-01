@@ -102,14 +102,17 @@ export default function App() {
   const [sideTab, setSideTab] = useState<SideTab | null>(null)
   const [dragLayerId, setDragLayerId] = useState<string | null>(null)
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
+  const [editingTextId, setEditingTextId] = useState<string | null>(null)
   const [pan, setPan] = useState<Point>({ x: 80, y: 60 })
   const [zoom, setZoom] = useState(0.7)
   const [paletteDrag, setPaletteDrag] = useState<PaletteDrag | null>(null)
   const stageWrapRef = useRef<HTMLDivElement>(null)
   const clipboardRef = useRef<WireElement[]>([])
   const paletteDragRef = useRef<PaletteDrag | null>(null)
+  const editingTextIdRef = useRef<string | null>(null)
   const componentsRef = useRef(components)
   componentsRef.current = components
+  editingTextIdRef.current = editingTextId
   const historyRef = useRef<HistorySnapshot[]>([])
   const documentRef = useRef<HistorySnapshot | null>(null)
   const [canUndo, setCanUndo] = useState(false)
@@ -159,6 +162,7 @@ export default function App() {
     setComponents(previous.components)
     setSelectedIds(previous.selectedIds)
     setEditingGroupId(previous.editingGroupId)
+    setEditingTextId(null)
     setArtboardSelected(previous.artboardSelected)
     setPlaceTool(null)
     setCanUndo(historyRef.current.length > 0)
@@ -180,48 +184,61 @@ export default function App() {
       artboardId: string,
       size?: { w: number; h: number },
     ) => {
+      const currentElements = documentRef.current?.elements || []
+      const boardEls = currentElements.filter((el) => el.artboardId === artboardId)
+      const z0 = nextZ(boardEls)
+      let created: WireElement[]
+
+      if (isCustomPlace(tool)) {
+        const def = componentsRef.current.find((c) => c.id === tool.customId)
+        if (!def) return
+        created = createFromParts(def.parts, {
+          name: def.name,
+          groupKind: 'custom',
+          cx: x,
+          cy: y,
+          startZ: z0,
+          snapOn,
+          artboardId,
+        })
+      } else if (isComposedKind(tool)) {
+        created = createComposed(tool, x, y, z0, snapOn, artboardId)
+      } else {
+        created = [
+          size && isDrawTool(tool)
+            ? createDrawnElement(tool, { x, y, w: size.w, h: size.h }, z0, artboardId)
+            : createElement(tool, x, y, z0, snapOn, artboardId),
+        ]
+      }
+
       recordHistory()
       setActiveArtboardId(artboardId)
       setArtboardSelected(false)
-      setElements((prev) => {
-        const boardEls = prev.filter((el) => el.artboardId === artboardId)
-        const z0 = nextZ(boardEls)
-
-        if (isCustomPlace(tool)) {
-          const def = componentsRef.current.find((c) => c.id === tool.customId)
-          if (!def) return prev
-          const created = createFromParts(def.parts, {
-            name: def.name,
-            groupKind: 'custom',
-            cx: x,
-            cy: y,
-            startZ: z0,
-            snapOn,
-            artboardId,
-          })
-          setSelectedIds(created.map((el) => el.id))
-          setEditingGroupId(null)
-          return [...prev, ...created]
-        }
-
-        if (isComposedKind(tool)) {
-          const created = createComposed(tool, x, y, z0, snapOn, artboardId)
-          setSelectedIds(created.map((el) => el.id))
-          setEditingGroupId(null)
-          return [...prev, ...created]
-        }
-
-        const el =
-          size && isDrawTool(tool)
-            ? createDrawnElement(tool, { x, y, w: size.w, h: size.h }, z0, artboardId)
-            : createElement(tool, x, y, z0, snapOn, artboardId)
-        setSelectedIds([el.id])
-        setEditingGroupId(null)
-        return [...prev, el]
-      })
+      setElements((prev) => [...prev, ...created])
+      setSelectedIds(created.map((el) => el.id))
+      setEditingGroupId(null)
+      if (tool === 'text' && created[0]) setEditingTextId(created[0].id)
     },
     [recordHistory, snapOn],
   )
+
+  const commitTextEdit = useCallback(
+    (id: string, text: string) => {
+      if (editingTextIdRef.current === id) {
+        setEditingTextId(null)
+        setSelectedIds([id])
+        setArtboardSelected(false)
+      }
+      const current = elements.find((el) => el.id === id)
+      if (!current || current.type !== 'text' || (current.text || '') === text) return
+      updateElement(id, { text })
+    },
+    [elements, updateElement],
+  )
+
+  const cancelTextEdit = useCallback((id: string) => {
+    setEditingTextId((current) => (current === id ? null : current))
+  }, [])
 
   const startPaletteDrag = useCallback(
     (tool: PlaceTool, label: string, clientX: number, clientY: number) => {
@@ -472,8 +489,11 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
+        return
+      }
 
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault()
@@ -499,6 +519,10 @@ export default function App() {
       }
 
       if (e.key === 'Escape') {
+        if (editingTextId) {
+          setEditingTextId(null)
+          return
+        }
         if (editingGroupId) {
           setEditingGroupId(null)
           return
@@ -507,6 +531,15 @@ export default function App() {
         setArtboardSelected(false)
         setPlaceTool(null)
         return
+      }
+
+      if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && selectedIds.length === 1) {
+        const el = elements.find((item) => item.id === selectedIds[0])
+        if (el?.type === 'text') {
+          e.preventDefault()
+          setEditingTextId(el.id)
+          return
+        }
       }
 
       if ((e.key === 'Delete' || e.key === 'Backspace') && artboardSelected && !selectedIds.length) {
@@ -529,6 +562,7 @@ export default function App() {
         recordHistory()
         setElements((prev) => prev.filter((el) => !selectedIds.includes(el.id)))
         setSelectedIds([])
+        setEditingTextId(null)
         return
       }
 
@@ -579,6 +613,7 @@ export default function App() {
   }, [
     selectedIds,
     editingGroupId,
+    editingTextId,
     elements,
     recordHistory,
     undo,
@@ -862,6 +897,10 @@ export default function App() {
             onViewChange={onViewChange}
             editingGroupId={editingGroupId}
             onEditGroup={setEditingGroupId}
+            editingTextId={editingTextId}
+            onEditText={setEditingTextId}
+            onCommitText={commitTextEdit}
+            onCancelTextEdit={cancelTextEdit}
             onGroup={handleGroup}
             onUngroup={handleUngroup}
           />
@@ -902,6 +941,7 @@ export default function App() {
             recordHistory()
             setElements((prev) => prev.filter((el) => !selectedIds.includes(el.id)))
             setSelectedIds([])
+            setEditingTextId(null)
           }}
           onUngroup={handleUngroup}
           onGroup={handleGroup}
