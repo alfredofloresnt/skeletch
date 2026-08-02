@@ -33,6 +33,7 @@ import {
 } from '../lib/variables'
 import ActionMenu from './ActionMenu'
 import ColorPicker from './ColorPicker'
+import NumberInput from './NumberInput'
 import Tooltip from './Tooltip'
 import WireElement from './WireElement'
 
@@ -765,19 +766,17 @@ export default function SidePanel({
                         <ColorPicker
                           value={sanitizeColor(String(v.value))}
                           allowTransparent={false}
+                          allowGradient={false}
                           showVariables={false}
                           label={`Value of ${v.name}`}
                           onChange={(color) => onUpdateVariable(v.id, { value: color })}
                         />
                       ) : (
-                        <input
-                          type="number"
+                        <NumberInput
                           className="var-row-number"
                           value={Number(v.value)}
                           aria-label={`Value of ${v.name}`}
-                          onChange={(e) =>
-                            onUpdateVariable(v.id, { value: Number(e.target.value) })
-                          }
+                          onChange={(n) => onUpdateVariable(v.id, { value: n })}
                         />
                       )}
                       <button

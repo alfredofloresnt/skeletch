@@ -1,12 +1,23 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
+  convertPaintMode,
+  isGradient,
+  paintLabel,
+  parsePaint,
+  serializePaint,
+  type ColorStop,
+  type Paint,
+  type PaintMode,
+} from '../lib/paint'
+import {
   colorVariables,
   createVariable,
   nextVariableName,
   sanitizeColor,
 } from '../lib/variables'
 import type { DesignVariable } from '../lib/types'
+import NumberInput from './NumberInput'
 
 type HSV = { h: number; s: number; v: number }
 
@@ -46,7 +57,7 @@ function rgbToHsv(r: number, g: number, b: number): HSV {
 }
 
 function hsvToRgb(h: number, s: number, v: number): { r: number; g: number; b: number } {
-  const hh = ((h % 360) + 360) % 360 / 60
+  const hh = (((h % 360) + 360) % 360) / 60
   const c = v * s
   const x = c * (1 - Math.abs((hh % 2) - 1))
   const m = v - c
@@ -80,11 +91,21 @@ function hueColor(h: number): string {
   return hsvToHex({ h, s: 1, v: 1 })
 }
 
+function activeStopColor(paint: Paint, stopIndex: 0 | 1): string {
+  if (paint.mode === 'solid') {
+    return paint.color === 'transparent' ? '#ffffff' : paint.color
+  }
+  const c = paint.stops[stopIndex].color
+  return c === 'transparent' ? '#ffffff' : c
+}
+
 type ColorPickerProps = {
   value: string
   variableId?: string | null
   variables?: DesignVariable[]
   allowTransparent?: boolean
+  /** When false, only solid colors (e.g. editing a variable value or text color). */
+  allowGradient?: boolean
   /** When false, only the solid HSV palette is shown (e.g. editing a variable value). */
   showVariables?: boolean
   label?: string
@@ -97,14 +118,19 @@ export default function ColorPicker({
   variableId,
   variables = [],
   allowTransparent = true,
+  allowGradient = true,
   showVariables = true,
   label = 'Color',
   onChange,
   onAddVariable,
 }: ColorPickerProps) {
   const [open, setOpen] = useState(false)
-  const [hex, setHex] = useState(value === 'transparent' ? '#ffffff' : value || '#1a1a1a')
-  const [hsv, setHsv] = useState<HSV>(() => hexToHsv(value === 'transparent' ? '#ffffff' : value || '#1a1a1a'))
+  const [stopIndex, setStopIndex] = useState<0 | 1>(0)
+  const paint = parsePaint(value)
+  const mode = paint.mode
+  const editingColor = activeStopColor(paint, stopIndex)
+  const [hex, setHex] = useState(editingColor)
+  const [hsv, setHsv] = useState<HSV>(() => hexToHsv(editingColor))
   const [pos, setPos] = useState({ top: 0, left: 0 })
   const rootRef = useRef<HTMLDivElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
@@ -118,11 +144,17 @@ export default function ColorPicker({
   const colors = showVariables ? colorVariables(variables) : []
 
   useEffect(() => {
+    if (bound) {
+      const c = sanitizeColor(String(bound.value))
+      setHex(c)
+      setHsv(hexToHsv(c))
+      return
+    }
     if (!value || value === 'transparent') return
-    const next = sanitizeColor(value)
-    setHex(next)
-    setHsv(hexToHsv(next))
-  }, [value])
+    const c = activeStopColor(parsePaint(value), stopIndex)
+    setHex(c)
+    setHsv(hexToHsv(c))
+  }, [value, bound, stopIndex])
 
   useLayoutEffect(() => {
     if (!open || !rootRef.current) return
@@ -133,7 +165,7 @@ export default function ColorPicker({
       let left = rect.right - width
       let top = rect.bottom + 6
       left = clamp(left, pad, window.innerWidth - width - pad)
-      const approxHeight = popoverRef.current?.offsetHeight || 320
+      const approxHeight = popoverRef.current?.offsetHeight || 360
       if (top + approxHeight > window.innerHeight - pad) {
         top = Math.max(pad, rect.top - approxHeight - 6)
       }
@@ -146,7 +178,7 @@ export default function ColorPicker({
       window.removeEventListener('resize', place)
       window.removeEventListener('scroll', place, true)
     }
-  }, [open])
+  }, [open, mode])
 
   useEffect(() => {
     if (!open) return
@@ -166,18 +198,45 @@ export default function ColorPicker({
     }
   }, [open])
 
+  const commitPaint = (next: Paint) => {
+    onChange(serializePaint(next), null)
+  }
+
   const commitLiteral = (next: string) => {
     const color = sanitizeColor(next)
     setHex(color)
     setHsv(hexToHsv(color))
-    onChange(color, null)
+    if (paint.mode === 'solid') {
+      commitPaint({ mode: 'solid', color })
+      return
+    }
+    const stops = [...paint.stops] as [ColorStop, ColorStop]
+    stops[stopIndex] = { ...stops[stopIndex], color }
+    commitPaint({ ...paint, stops })
   }
 
   const commitHsv = (next: HSV) => {
     const color = hsvToHex(next)
     setHsv(next)
     setHex(color)
-    onChange(color, null)
+    if (paint.mode === 'solid') {
+      commitPaint({ mode: 'solid', color })
+      return
+    }
+    const stops = [...paint.stops] as [ColorStop, ColorStop]
+    stops[stopIndex] = { ...stops[stopIndex], color }
+    commitPaint({ ...paint, stops })
+  }
+
+  const setMode = (next: PaintMode) => {
+    if (next === mode && !bound) return
+    setStopIndex(0)
+    onChange(convertPaintMode(bound ? String(bound.value) : value, next), null)
+  }
+
+  const setAngle = (angle: number) => {
+    if (paint.mode !== 'linear') return
+    commitPaint({ ...paint, angle: clamp(angle, 0, 359) })
   }
 
   const pickSv = (clientX: number, clientY: number) => {
@@ -211,7 +270,9 @@ export default function ColorPicker({
 
   const addFromCurrent = () => {
     if (!onAddVariable) return
-    const color = isTransparent ? '#1a1a1a' : sanitizeColor(bound ? String(bound.value) : hex)
+    const color = isTransparent
+      ? '#1a1a1a'
+      : sanitizeColor(bound ? String(bound.value) : activeStopColor(paint, stopIndex))
     const suggested = nextVariableName(variables, 'color')
     const name = window.prompt('Color variable name', suggested)
     if (name == null) return
@@ -219,6 +280,9 @@ export default function ColorPicker({
     onAddVariable(variable)
     onChange(color, variable.id)
   }
+
+  const gradientCss =
+    paint.mode === 'solid' ? undefined : serializePaint(paint)
 
   const popover = open
     ? createPortal(
@@ -229,6 +293,62 @@ export default function ColorPicker({
           aria-label={label}
           style={{ top: pos.top, left: pos.left }}
         >
+          {allowGradient && (
+            <label className="color-picker-mode">
+              <span className="color-picker-mode-label">Type</span>
+              <select
+                className="color-picker-mode-select"
+                value={bound ? 'solid' : mode}
+                onChange={(e) => setMode(e.target.value as PaintMode)}
+                aria-label="Paint type"
+              >
+                <option value="solid">Solid</option>
+                <option value="linear">Linear gradient</option>
+                <option value="radial">Radial gradient</option>
+              </select>
+            </label>
+          )}
+
+          {paint.mode !== 'solid' && !bound && (
+            <div className="color-picker-gradient">
+              <div
+                className="color-picker-gradient-bar"
+                style={{ background: gradientCss }}
+                aria-hidden
+              />
+              <div className="color-picker-stops">
+                {paint.stops.map((stop, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    className={`color-picker-stop${stopIndex === i ? ' is-active' : ''}`}
+                    onClick={() => setStopIndex(i as 0 | 1)}
+                    title={i === 0 ? 'Start color' : 'End color'}
+                  >
+                    <span
+                      className="color-picker-swatch"
+                      style={{ background: stop.color === 'transparent' ? undefined : stop.color }}
+                    />
+                    <span>{i === 0 ? 'Start' : 'End'}</span>
+                  </button>
+                ))}
+              </div>
+              {paint.mode === 'linear' && (
+                <label className="color-picker-angle">
+                  <span>Angle</span>
+                  <NumberInput
+                    min={0}
+                    max={359}
+                    value={Math.round(paint.angle)}
+                    onChange={setAngle}
+                    aria-label="Gradient angle"
+                  />
+                  <span className="color-picker-angle-unit">°</span>
+                </label>
+              )}
+            </div>
+          )}
+
           <div className="color-picker-solid">
             <div className="color-picker-palette">
               <div
@@ -286,12 +406,18 @@ export default function ColorPicker({
               />
               <span
                 className="color-picker-swatch color-picker-preview"
-                style={{ background: isTransparent ? undefined : hsvToHex(hsv) }}
+                style={{
+                  background: isTransparent
+                    ? undefined
+                    : paint.mode === 'solid' || bound
+                      ? hsvToHex(hsv)
+                      : gradientCss,
+                }}
               />
             </div>
           </div>
 
-          {allowTransparent && (
+          {allowTransparent && paint.mode === 'solid' && (
             <button
               type="button"
               className="btn-ghost color-picker-clear"
@@ -351,6 +477,12 @@ export default function ColorPicker({
       )
     : null
 
+  const triggerBackground = isTransparent
+    ? undefined
+    : isGradient(swatch)
+      ? swatch
+      : swatch
+
   return (
     <div className="color-picker" ref={rootRef}>
       <button
@@ -362,10 +494,10 @@ export default function ColorPicker({
       >
         <span
           className={`color-picker-swatch${isTransparent ? ' is-transparent' : ''}`}
-          style={{ background: isTransparent ? undefined : swatch }}
+          style={{ background: triggerBackground }}
         />
         <span className="color-picker-trigger-label">
-          {bound ? `$${bound.name}` : isTransparent ? 'Transparent' : hex}
+          {bound ? `$${bound.name}` : paintLabel(value)}
         </span>
       </button>
       {popover}

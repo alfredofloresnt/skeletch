@@ -42,6 +42,11 @@ import {
   sharedGroupId,
   ungroup,
 } from './lib/elements'
+import {
+  appClipboardMarker,
+  isAppClipboardTransfer,
+  writeAppClipboardMarker,
+} from './lib/appClipboard'
 import { exportArtboardPng } from './lib/exportPng'
 import { canAcceptFillImage, loadHtmlImage, readClipboardImage } from './lib/fillImage'
 import { importSvg, readSvgFromTransfer } from './lib/importSvg'
@@ -698,15 +703,6 @@ export default function App() {
         return
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && selectedIds.length) {
-        e.preventDefault()
-        const ids = expandSelectionForGroups(elements, selectedIds, editingGroupId)
-        clipboardRef.current = elements
-          .filter((el) => ids.includes(el.id))
-          .map((el) => ({ ...el }))
-        return
-      }
-
       if (selectedIds.length && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault()
         recordHistory()
@@ -738,19 +734,60 @@ export default function App() {
   ])
 
   useEffect(() => {
+    const isEditingField = (target: EventTarget | null) => {
+      const el = target as HTMLElement | null
+      const tag = el?.tagName
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || Boolean(el?.isContentEditable)
+    }
+
+    const pasteAppClipboard = () => {
+      if (!clipboardRef.current.length) return false
+      recordHistory()
+      const clipIds = clipboardRef.current.map((el) => el.id)
+      const { elements: copies, ids } = duplicateElements(clipboardRef.current, clipIds, 16, 16)
+      const boardEls = elementsOnArtboard(elements, activeArtboardId)
+      const z0 = nextZ(boardEls)
+      const created = copies.map((el, i) => ({
+        ...el,
+        z: z0 + i,
+        artboardId: activeArtboardId,
+      }))
+      setElements((prev) => [...prev, ...created])
+      setSelectedIds(ids)
+      setArtboardSelected(false)
+      setEditingGroupId(null)
+      clipboardRef.current = created.map((el) => ({ ...el }))
+      return true
+    }
+
+    const onCopy = (e: ClipboardEvent) => {
+      if (isEditingField(e.target) || editingTextId) return
+      if (!selectedIds.length) return
+      const ids = expandSelectionForGroups(elements, selectedIds, editingGroupId)
+      const copied = elements.filter((el) => ids.includes(el.id)).map((el) => ({ ...el }))
+      if (!copied.length) return
+      clipboardRef.current = copied
+      e.preventDefault()
+      e.clipboardData?.setData('text/plain', appClipboardMarker())
+      void writeAppClipboardMarker()
+    }
+
     const onPaste = async (e: ClipboardEvent) => {
-      const target = e.target as HTMLElement | null
-      const tag = target?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
+      if (isEditingField(e.target) || editingTextId) return
+
+      const data = e.clipboardData
+
+      // Last in-app element copy owns the system clipboard — prefer it over a stale image.
+      if (isAppClipboardTransfer(data) && clipboardRef.current.length) {
+        e.preventDefault()
+        pasteAppClipboard()
         return
       }
-      if (editingTextId) return
 
       const fillableIds = selectedIds.filter((id) => {
         const el = elements.find((item) => item.id === id)
         return el ? canAcceptFillImage(el) : false
       })
-      const data = e.clipboardData
       const svgText = await readSvgFromTransfer(data)
       if (svgText) {
         e.preventDefault()
@@ -827,28 +864,19 @@ export default function App() {
 
       if (!clipboardRef.current.length) return
       e.preventDefault()
-      recordHistory()
-      const clipIds = clipboardRef.current.map((el) => el.id)
-      const { elements: copies, ids } = duplicateElements(clipboardRef.current, clipIds, 16, 16)
-      const boardEls = elementsOnArtboard(elements, activeArtboardId)
-      const z0 = nextZ(boardEls)
-      const created = copies.map((el, i) => ({
-        ...el,
-        z: z0 + i,
-        artboardId: activeArtboardId,
-      }))
-      setElements((prev) => [...prev, ...created])
-      setSelectedIds(ids)
-      setArtboardSelected(false)
-      setEditingGroupId(null)
-      clipboardRef.current = created.map((el) => ({ ...el }))
+      pasteAppClipboard()
     }
 
+    window.addEventListener('copy', onCopy)
     window.addEventListener('paste', onPaste)
-    return () => window.removeEventListener('paste', onPaste)
+    return () => {
+      window.removeEventListener('copy', onCopy)
+      window.removeEventListener('paste', onPaste)
+    }
   }, [
     selectedIds,
     elements,
+    editingGroupId,
     editingTextId,
     recordHistory,
     activeArtboardId,

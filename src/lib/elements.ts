@@ -1,5 +1,6 @@
 import { DEFAULTS, MIN_SIZE } from './constants'
 import { getBounds, normalizeRect, snap, uid } from './geometry'
+import { isGradient } from './paint'
 import { fitPathElement } from './pathGeometry'
 import type {
   AtomicType,
@@ -239,7 +240,8 @@ export function getPartsPreview(parts: LayoutPart[], key = 'preview'): WireEleme
     ...el,
     x: el.x - bounds.x,
     y: el.y - bounds.y,
-    stroke: el.stroke && el.stroke !== 'transparent' ? '#ffffff' : el.stroke,
+    stroke:
+      el.stroke && el.stroke !== 'transparent' && !isGradient(el.stroke) ? '#ffffff' : el.stroke,
     fill: el.type === 'text' ? '#ffffff' : el.fill,
   }))
 }

@@ -1,6 +1,7 @@
 import { canGroup, sharedGroupId } from '../lib/elements'
 import type { DesignVariable, TextAlign, VerticalAlign, WireElement } from '../lib/types'
 import ColorPicker from './ColorPicker'
+import NumberInput from './NumberInput'
 import VariableNumberInput from './VariableNumberInput'
 
 function AlignIcon({ align }: { align: TextAlign }) {
@@ -211,15 +212,11 @@ export default function Inspector({
           <div className="field-row">
             <label>
               °
-              <input
-                type="number"
+              <NumberInput
                 step={1}
-                value={sharedRotation ?? ''}
+                value={sharedRotation}
                 placeholder="—"
-                onChange={(e) => {
-                  if (e.target.value === '') return
-                  onRotateSelection?.(Number(e.target.value) || 0)
-                }}
+                onChange={(n) => onRotateSelection?.(n)}
                 aria-label="Rotation degrees"
               />
             </label>
@@ -322,37 +319,34 @@ export default function Inspector({
         <div className="field-row">
           <label>
             X
-            <input
-              type="number"
+            <NumberInput
               value={Math.round(el.x)}
-              onChange={(e) => set({ x: Number(e.target.value) })}
+              onChange={(n) => set({ x: n })}
             />
           </label>
           <label>
             Y
-            <input
-              type="number"
+            <NumberInput
               value={Math.round(el.y)}
-              onChange={(e) => set({ y: Number(e.target.value) })}
+              onChange={(n) => set({ y: n })}
             />
           </label>
         </div>
         <div className="field-row">
           <label>
             W
-            <input
-              type="number"
+            <NumberInput
               min={1}
               value={Math.round(el.w)}
-              onChange={(e) => set({ w: Number(e.target.value) })}
+              onChange={(n) => set({ w: n })}
             />
           </label>
           <label>
             H
-            <input
-              type="number"
+            <NumberInput
+              min={1}
               value={Math.round(el.h)}
-              onChange={(e) => set({ h: Number(e.target.value) })}
+              onChange={(n) => set({ h: n })}
             />
           </label>
         </div>
@@ -362,11 +356,10 @@ export default function Inspector({
         <div className="field-row">
           <label>
             °
-            <input
-              type="number"
+            <NumberInput
               step={1}
               value={Math.round(el.rotation || 0)}
-              onChange={(e) => onRotateSelection?.(Number(e.target.value) || 0)}
+              onChange={(n) => onRotateSelection?.(n)}
               aria-label="Rotation degrees"
             />
           </label>
@@ -475,6 +468,7 @@ export default function Inspector({
               variableId={el.fillVar}
               variables={variables}
               allowTransparent={false}
+              allowGradient={false}
               onChange={(fill, fillVar) => set({ fill, fillVar })}
               onAddVariable={onAddVariable}
             />
@@ -487,17 +481,16 @@ export default function Inspector({
               label="Stroke"
               value={el.stroke || '#1a1a1a'}
               variables={variables}
-              allowTransparent={false}
+              allowTransparent
               onChange={(stroke) => set({ stroke })}
               onAddVariable={onAddVariable}
             />
             <label className="field-label">Stroke width</label>
-            <input
-              type="number"
+            <NumberInput
               min={0}
               max={40}
               value={el.strokeWidth ?? 2}
-              onChange={(e) => set({ strokeWidth: Number(e.target.value) })}
+              onChange={(n) => set({ strokeWidth: n })}
             />
           </>
         )}

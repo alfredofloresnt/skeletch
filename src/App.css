@@ -1394,6 +1394,94 @@ textarea {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 
+.color-picker-mode {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.55rem;
+}
+
+.color-picker-mode-label {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.color-picker-mode-select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.3rem 0.4rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  background: #fff;
+  color: #1a1a1a;
+}
+
+.color-picker-gradient {
+  display: grid;
+  gap: 0.4rem;
+  margin-bottom: 0.55rem;
+}
+
+.color-picker-gradient-bar {
+  width: 100%;
+  height: 1.1rem;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  padding: 0;
+  cursor: default;
+}
+
+.color-picker-stops {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+}
+
+.color-picker-stop {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  background: #fff;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+
+.color-picker-stop.is-active {
+  border-color: #1f6feb;
+  background: rgba(31, 111, 235, 0.08);
+}
+
+.color-picker-angle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: #666;
+}
+
+.color-picker-angle input {
+  width: 4.2rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.25rem 0.35rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+.color-picker-angle-unit {
+  color: #888;
+}
+
 .color-picker-solid {
   display: grid;
   gap: 0.5rem;

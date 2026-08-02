@@ -6,6 +6,7 @@ import {
   numberVariables,
 } from '../lib/variables'
 import type { DesignVariable } from '../lib/types'
+import NumberInput from './NumberInput'
 
 type VariableNumberInputProps = {
   value: number
@@ -55,12 +56,11 @@ export default function VariableNumberInput({
   return (
     <div className="var-number" ref={rootRef}>
       <div className="var-number-row">
-        <input
-          type="number"
+        <NumberInput
           min={min}
           max={max}
           value={bound ? Number(bound.value) : value}
-          onChange={(e) => onChange(Number(e.target.value), null)}
+          onChange={(n) => onChange(n, null)}
           aria-label={label}
         />
         <button

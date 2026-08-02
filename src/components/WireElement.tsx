@@ -11,6 +11,15 @@ import {
   rotateCursorForHandle,
   type CornerHandle,
 } from '../lib/geometry'
+import {
+  cssBackgroundPaint,
+  isGradient,
+  isVisiblePaint,
+  parsePaint,
+  svgLinearPoints,
+  svgPaintAttr,
+  toSolidCssColor,
+} from '../lib/paint'
 import { pathVerticesToD } from '../lib/pathGeometry'
 import type { Rect, ResizeHandle, WireElement as WireElementModel } from '../lib/types'
 
@@ -35,6 +44,88 @@ function fillImageStyle(src?: string | null): CSSProperties {
   }
 }
 
+function SvgGradientDef({
+  id,
+  value,
+  line,
+}: {
+  id: string
+  value: string
+  /** When set, paint along this line in user space (avoids degenerate line bboxes). */
+  line?: { x1: number; y1: number; x2: number; y2: number }
+}) {
+  const paint = parsePaint(value)
+  if (paint.mode === 'solid') return null
+  const stops = paint.stops.map((s, i) => (
+    <stop key={i} offset={`${Math.round(s.offset * 100)}%`} stopColor={s.color} />
+  ))
+  if (line) {
+    if (paint.mode === 'linear') {
+      return (
+        <linearGradient
+          id={id}
+          gradientUnits="userSpaceOnUse"
+          x1={line.x1}
+          y1={line.y1}
+          x2={line.x2}
+          y2={line.y2}
+        >
+          {stops}
+        </linearGradient>
+      )
+    }
+    const cx = (line.x1 + line.x2) / 2
+    const cy = (line.y1 + line.y2) / 2
+    const r = Math.max(Math.hypot(line.x2 - line.x1, line.y2 - line.y1) / 2, 1)
+    return (
+      <radialGradient id={id} gradientUnits="userSpaceOnUse" cx={cx} cy={cy} r={r}>
+        {stops}
+      </radialGradient>
+    )
+  }
+  if (paint.mode === 'linear') {
+    const pts = svgLinearPoints(paint.angle)
+    return (
+      <linearGradient
+        id={id}
+        gradientUnits="objectBoundingBox"
+        x1={pts.x1}
+        y1={pts.y1}
+        x2={pts.x2}
+        y2={pts.y2}
+      >
+        {stops}
+      </linearGradient>
+    )
+  }
+  return (
+    <radialGradient id={id} gradientUnits="objectBoundingBox" cx="0.5" cy="0.5" r="0.5">
+      {stops}
+    </radialGradient>
+  )
+}
+
+function SvgPaintDefs({
+  idPrefix,
+  fill,
+  stroke,
+  line,
+}: {
+  idPrefix: string
+  fill?: string | null
+  stroke?: string | null
+  line?: { x1: number; y1: number; x2: number; y2: number }
+}) {
+  return (
+    <defs>
+      {fill && isGradient(fill) ? <SvgGradientDef id={`${idPrefix}-fill`} value={fill} /> : null}
+      {stroke && isGradient(stroke) ? (
+        <SvgGradientDef id={`${idPrefix}-stroke`} value={stroke} line={line} />
+      ) : null}
+    </defs>
+  )
+}
+
 function ImagePlaceholder({
   stroke,
   strokeWidth,
@@ -44,6 +135,7 @@ function ImagePlaceholder({
 }) {
   const s = stroke ?? DEFAULTS.image.stroke
   const sw = strokeWidth ?? DEFAULTS.image.strokeWidth
+  const strokePaint = isVisiblePaint(s) ? toSolidCssColor(s) : 'none'
   return (
     <svg className="el-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
       <rect
@@ -52,7 +144,7 @@ function ImagePlaceholder({
         width="98"
         height="98"
         fill="none"
-        stroke={s}
+        stroke={strokePaint}
         strokeWidth={sw}
         vectorEffect="non-scaling-stroke"
       />
@@ -61,7 +153,7 @@ function ImagePlaceholder({
         y1="1"
         x2="99"
         y2="99"
-        stroke={s}
+        stroke={strokePaint}
         strokeWidth={sw}
         vectorEffect="non-scaling-stroke"
       />
@@ -70,7 +162,7 @@ function ImagePlaceholder({
         y1="1"
         x2="1"
         y2="99"
-        stroke={s}
+        stroke={strokePaint}
         strokeWidth={sw}
         vectorEffect="non-scaling-stroke"
       />
@@ -236,13 +328,18 @@ export default function WireElement({
         data-id={el.id}
         onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
       >
-        <svg className="el-svg" width={boxW} height={boxH}>
+        <svg className="el-svg" width={boxW} height={boxH} viewBox={`0 0 ${boxW} ${boxH}`}>
+          <SvgPaintDefs
+            idPrefix={el.id}
+            stroke={el.stroke}
+            line={{ x1: 0 - minX, y1: 0 - minY, x2: x2 - minX, y2: y2 - minY }}
+          />
           <line
             x1={0 - minX}
             y1={0 - minY}
             x2={x2 - minX}
             y2={y2 - minY}
-            stroke={el.stroke}
+            stroke={svgPaintAttr(el.stroke, `${el.id}-stroke`)}
             strokeWidth={el.strokeWidth}
           />
         </svg>
@@ -266,18 +363,50 @@ export default function WireElement({
 
   if (el.type === 'circle') {
     const sw = el.strokeWidth || 0
+    const hasStroke = sw > 0 && isVisiblePaint(el.stroke)
+    if (hasStroke && isGradient(el.stroke)) {
+      const inset = sw / 2
+      return (
+        <div
+          className={`wire-el wire-el--circle${selected ? ' is-selected' : ''}`}
+          style={{ ...style, overflow: 'hidden' }}
+          data-id={el.id}
+          onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
+        >
+          {el.fillImage ? (
+            <div
+              className="wire-el-fill-image"
+              style={{
+                ...fillImageStyle(el.fillImage),
+                borderRadius: '50%',
+              }}
+              aria-hidden
+            />
+          ) : null}
+          <svg className="el-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <SvgPaintDefs idPrefix={el.id} fill={el.fill} stroke={el.stroke} />
+            <ellipse
+              cx="50"
+              cy="50"
+              rx={Math.max(0, 50 - (inset / Math.max(el.w, 1)) * 100)}
+              ry={Math.max(0, 50 - (inset / Math.max(el.h, 1)) * 100)}
+              fill={el.fillImage ? 'none' : svgPaintAttr(el.fill, `${el.id}-fill`)}
+              stroke={svgPaintAttr(el.stroke, `${el.id}-stroke`)}
+              strokeWidth={sw}
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+        </div>
+      )
+    }
     return (
       <div
         className={`wire-el wire-el--circle${selected ? ' is-selected' : ''}`}
         style={{
           ...style,
           borderRadius: '50%',
-          border: sw > 0 ? `${sw}px solid ${el.stroke}` : 'none',
-          background: el.fillImage
-            ? undefined
-            : el.fill === 'transparent'
-              ? 'transparent'
-              : el.fill,
+          border: hasStroke ? `${sw}px solid ${toSolidCssColor(el.stroke)}` : 'none',
+          background: el.fillImage ? undefined : cssBackgroundPaint(el.fill),
           ...fillImageStyle(el.fillImage),
           boxSizing: 'border-box',
           overflow: 'hidden',
@@ -290,7 +419,7 @@ export default function WireElement({
 
   if (el.type === 'triangle') {
     const sw = el.strokeWidth || 0
-    const fill = el.fill === 'transparent' ? 'none' : el.fill
+    const hasStroke = sw > 0 && isVisiblePaint(el.stroke)
     return (
       <div
         className={`wire-el wire-el--triangle${selected ? ' is-selected' : ''}`}
@@ -309,10 +438,11 @@ export default function WireElement({
           />
         ) : null}
         <svg className="el-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <SvgPaintDefs idPrefix={el.id} fill={el.fill} stroke={el.stroke} />
           <polygon
             points="50,3 97,97 3,97"
-            fill={el.fillImage ? 'none' : fill}
-            stroke={sw > 0 ? el.stroke : 'none'}
+            fill={el.fillImage ? 'none' : svgPaintAttr(el.fill, `${el.id}-fill`)}
+            stroke={hasStroke ? svgPaintAttr(el.stroke, `${el.id}-stroke`) : 'none'}
             strokeWidth={sw}
             strokeLinejoin="miter"
             vectorEffect="non-scaling-stroke"
@@ -329,11 +459,7 @@ export default function WireElement({
         className={`wire-el wire-el--image${selected ? ' is-selected' : ''}`}
         style={{
           ...style,
-          background: el.fillImage
-            ? undefined
-            : fill === 'transparent'
-              ? 'transparent'
-              : fill,
+          background: el.fillImage ? undefined : cssBackgroundPaint(fill),
           ...fillImageStyle(el.fillImage),
           borderRadius: el.cornerRadius,
           overflow: 'hidden',
@@ -348,7 +474,11 @@ export default function WireElement({
 
   if (el.type === 'path') {
     const sw = el.strokeWidth || 0
-    const fill = el.pathClosed && el.fill && el.fill !== 'transparent' ? el.fill : 'none'
+    const hasStroke = sw > 0 && isVisiblePaint(el.stroke)
+    const fill =
+      el.pathClosed && isVisiblePaint(el.fill)
+        ? svgPaintAttr(el.fill, `${el.id}-fill`)
+        : 'none'
     const d = pathVerticesToD(el.pathVertices || [], Boolean(el.pathClosed))
     return (
       <div
@@ -358,11 +488,12 @@ export default function WireElement({
         onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
       >
         <svg className="el-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <SvgPaintDefs idPrefix={el.id} fill={el.fill} stroke={el.stroke} />
           {d ? (
             <path
               d={d}
               fill={fill}
-              stroke={sw > 0 ? el.stroke : 'none'}
+              stroke={hasStroke ? svgPaintAttr(el.stroke, `${el.id}-stroke`) : 'none'}
               strokeWidth={sw}
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -376,17 +507,52 @@ export default function WireElement({
 
   // rect
   const sw = el.strokeWidth || 0
+  const hasStroke = sw > 0 && isVisiblePaint(el.stroke)
+  if (hasStroke && isGradient(el.stroke)) {
+    const r = el.cornerRadius || 0
+    const rx = Math.min(r, el.w / 2)
+    const ry = Math.min(r, el.h / 2)
+    return (
+      <div
+        className={`wire-el wire-el--rect${selected ? ' is-selected' : ''}`}
+        style={{ ...style, overflow: 'hidden' }}
+        data-id={el.id}
+        onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
+      >
+        {el.fillImage ? (
+          <div
+            className="wire-el-fill-image"
+            style={{
+              ...fillImageStyle(el.fillImage),
+              borderRadius: r,
+            }}
+            aria-hidden
+          />
+        ) : null}
+        <svg className="el-svg" width="100%" height="100%">
+          <SvgPaintDefs idPrefix={el.id} fill={el.fill} stroke={el.stroke} />
+          <rect
+            x={sw / 2}
+            y={sw / 2}
+            width={Math.max(0, el.w - sw)}
+            height={Math.max(0, el.h - sw)}
+            rx={Math.max(0, rx - sw / 2)}
+            ry={Math.max(0, ry - sw / 2)}
+            fill={el.fillImage ? 'none' : svgPaintAttr(el.fill, `${el.id}-fill`)}
+            stroke={svgPaintAttr(el.stroke, `${el.id}-stroke`)}
+            strokeWidth={sw}
+          />
+        </svg>
+      </div>
+    )
+  }
   return (
     <div
       className={`wire-el wire-el--rect${selected ? ' is-selected' : ''}`}
       style={{
         ...style,
-        border: sw > 0 ? `${sw}px solid ${el.stroke}` : 'none',
-        background: el.fillImage
-          ? undefined
-          : el.fill === 'transparent'
-            ? 'transparent'
-            : el.fill,
+        border: hasStroke ? `${sw}px solid ${toSolidCssColor(el.stroke)}` : 'none',
+        background: el.fillImage ? undefined : cssBackgroundPaint(el.fill),
         ...fillImageStyle(el.fillImage),
         borderRadius: el.cornerRadius,
         boxSizing: 'border-box',

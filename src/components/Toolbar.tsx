@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { FRAME_PRESETS } from '../lib/constants'
 import type { Artboard } from '../lib/types'
+import NumberInput from './NumberInput'
 
 type ToolbarProps = {
   artboard: Artboard
@@ -64,23 +65,21 @@ export default function Toolbar({
           ))}
           <option value="custom">Custom</option>
         </select>
-        <input
+        <NumberInput
           className="toolbar-num"
-          type="number"
           min={100}
           max={4000}
           value={artboard.width}
-          onChange={(e) => onSizeChange({ width: Number(e.target.value) || 100 })}
+          onChange={(n) => onSizeChange({ width: n })}
           aria-label="Artboard width"
         />
         <span className="toolbar-x">×</span>
-        <input
+        <NumberInput
           className="toolbar-num"
-          type="number"
           min={100}
           max={4000}
           value={artboard.height}
-          onChange={(e) => onSizeChange({ height: Number(e.target.value) || 100 })}
+          onChange={(n) => onSizeChange({ height: n })}
           aria-label="Artboard height"
         />
         <button type="button" className="btn-ghost" onClick={onAddArtboard} title="Add artboard">
