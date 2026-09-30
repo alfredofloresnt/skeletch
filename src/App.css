@@ -879,7 +879,7 @@ textarea {
 
 .artboard.is-editing-group {
   box-shadow:
-    0 0 0 1px rgba(196, 92, 38, 0.45),
+    0 0 0 var(--hairline) rgba(196, 92, 38, 0.45),
     0 24px 60px rgba(0, 0, 0, 0.45);
 }
 
@@ -1210,6 +1210,13 @@ textarea {
 .canvas-world {
   position: relative;
   transform-origin: 0 0;
+  /* One screen pixel expressed in world units, for chrome that must not scale with zoom. */
+  --hairline: calc(1px * var(--zoom-inv, 1));
+}
+
+/* Only promoted while a pinch/ctrl-wheel zoom is in flight: a permanent will-change makes
+   the browser keep scaling a stale bitmap, so content stays blurry after zooming. */
+.canvas-world.is-zooming {
   will-change: transform;
 }
 
@@ -1251,7 +1258,7 @@ textarea {
   position: relative;
   background: var(--board);
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.2),
+    0 0 0 var(--hairline) rgba(0, 0, 0, 0.2),
     0 24px 60px rgba(0, 0, 0, 0.45);
   overflow: hidden;
   pointer-events: auto;
@@ -1259,13 +1266,13 @@ textarea {
 
 .artboard.is-active {
   box-shadow:
-    0 0 0 1.5px rgba(255, 255, 255, 0.35),
+    0 0 0 calc(1.5 * var(--hairline)) rgba(255, 255, 255, 0.35),
     0 24px 60px rgba(0, 0, 0, 0.45);
 }
 
 .artboard.is-artboard-selected {
   box-shadow:
-    0 0 0 2px rgba(90, 160, 255, 0.85),
+    0 0 0 calc(2 * var(--hairline)) rgba(90, 160, 255, 0.85),
     0 24px 60px rgba(0, 0, 0, 0.45);
 }
 
@@ -1407,10 +1414,10 @@ textarea {
 
 .selection-overlay {
   position: absolute;
-  border: 1px solid var(--select);
+  border: var(--hairline) solid var(--select);
   pointer-events: none;
   z-index: 9999;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5);
+  box-shadow: 0 0 0 var(--hairline) rgba(255, 255, 255, 0.5);
 }
 
 .selection-overlay-body {
@@ -1424,7 +1431,7 @@ textarea {
 .selection-item-outline {
   position: absolute;
   box-sizing: border-box;
-  border: 1px solid var(--select);
+  border: var(--hairline) solid var(--select);
   pointer-events: none;
   z-index: 9998;
   transform-origin: center center;
@@ -1493,7 +1500,7 @@ textarea {
 
 .marquee {
   position: absolute;
-  border: 1px dashed var(--select);
+  border: var(--hairline) dashed var(--select);
   background: rgba(31, 111, 235, 0.08);
   pointer-events: none;
   z-index: 10000;

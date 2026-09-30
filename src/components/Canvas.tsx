@@ -3,6 +3,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
@@ -465,6 +466,7 @@ export default function Canvas({
   const viewRef = useRef({ pan, zoom })
   const pinchActiveRef = useRef(false)
   const pinchIdleTimer = useRef(0)
+  const worldRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (pinchActiveRef.current) return
@@ -598,9 +600,13 @@ export default function Canvas({
 
       if (e.ctrlKey || e.metaKey) {
         pinchActiveRef.current = true
+        // Promote the world to its own layer only while zooming: smooth scaling during
+        // the gesture, then a crisp re-raster at the final zoom once it settles.
+        worldRef.current?.classList.add('is-zooming')
         window.clearTimeout(pinchIdleTimer.current)
         pinchIdleTimer.current = window.setTimeout(() => {
           pinchActiveRef.current = false
+          worldRef.current?.classList.remove('is-zooming')
           viewRef.current = { pan: viewRef.current.pan, zoom: viewRef.current.zoom }
         }, 120)
 
@@ -1482,10 +1488,15 @@ export default function Canvas({
       }}
     >
       <div
+        ref={worldRef}
         className="canvas-world"
-        style={{
-          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-        }}
+        style={
+          {
+            // Whole-pixel pan keeps 1px strokes and text off subpixel boundaries.
+            transform: `translate(${Math.round(pan.x)}px, ${Math.round(pan.y)}px) scale(${zoom})`,
+            '--zoom-inv': 1 / zoom,
+          } as CSSProperties
+        }
       >
         {artboards.map((ab) => {
           const boardEls = elements.filter((el) => el.artboardId === ab.id)
@@ -1517,8 +1528,8 @@ export default function Canvas({
                   width: ab.width,
                   height: ab.height,
                   backgroundImage: snapOn
-                    ? `linear-gradient(to right, rgba(0,0,0,0.06) 1px, transparent 1px),
-                       linear-gradient(to bottom, rgba(0,0,0,0.06) 1px, transparent 1px)`
+                    ? `linear-gradient(to right, rgba(0,0,0,0.06) var(--hairline), transparent var(--hairline)),
+                       linear-gradient(to bottom, rgba(0,0,0,0.06) var(--hairline), transparent var(--hairline))`
                     : 'none',
                   backgroundSize: snapOn ? `${GRID_SIZE}px ${GRID_SIZE}px` : undefined,
                 }}
