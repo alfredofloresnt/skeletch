@@ -586,6 +586,8 @@ type SelectionOverlayProps = {
   /** Show rotate targets outside each resize handle (single selection). */
   showRotateHandles?: boolean
   onRotateDown?: (e: ReactPointerEvent, handle: ResizeHandle) => void
+  /** Makes the box interior grabbable (multi-selection drag). */
+  onBodyDown?: (e: ReactPointerEvent) => void
 }
 
 export function SelectionOverlay({
@@ -598,6 +600,7 @@ export function SelectionOverlay({
   rotation = 0,
   showRotateHandles = false,
   onRotateDown,
+  onBodyDown,
 }: SelectionOverlayProps) {
   if (!bounds) return null
   const maxR = Math.max(0, Math.min(bounds.w, bounds.h) / 2)
@@ -636,6 +639,7 @@ export function SelectionOverlay({
         transformOrigin: 'center center',
       }}
     >
+      {onBodyDown && <div className="selection-overlay-body" onPointerDown={onBodyDown} />}
       {HANDLES.map((h) => (
         <div
           key={h}

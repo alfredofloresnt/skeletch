@@ -21,7 +21,7 @@ A low-fidelity wireframe editor for sketching UI layouts in the browser. Built w
 | --- | --- |
 | Pan | Space + drag, or middle-mouse drag |
 | Zoom | Scroll |
-| Multi-select | ⌘/Ctrl + click, or marquee |
+| Multi-select | Shift or ⌘/Ctrl + click, or drag on empty space (marquee) |
 | Undo | ⌘/Ctrl + Z |
 | Copy / Paste | ⌘/Ctrl + C / V |
 | Group / Ungroup | ⌘/Ctrl + G / ⌘/Ctrl + Shift + G |

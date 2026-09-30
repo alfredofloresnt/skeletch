@@ -29,8 +29,10 @@ import {
   cornerRadiusFromPointer,
   elementCenter,
   getBounds,
+  normalizeRect,
   pointInElement,
   rectsIntersect,
+  rotatedAabb,
   screenToWorld,
   snap,
   sortByZ,
@@ -64,6 +66,8 @@ import WireElement, { SelectionOverlay } from './WireElement'
 
 const PEN_CLOSE_SCREEN_PX = 10
 const PEN_HANDLE_DRAG_PX = 4
+/** Screen px the pointer must travel before a press on an element becomes a drag. */
+const MOVE_DRAG_PX = 3
 
 type DrawPreview = {
   artboardId: string
@@ -201,6 +205,53 @@ function PenDraftOverlay({
   )
 }
 
+function unionRects(rects: Rect[]): Rect | null {
+  if (!rects.length) return null
+  const minX = Math.min(...rects.map((r) => r.x))
+  const minY = Math.min(...rects.map((r) => r.y))
+  const maxX = Math.max(...rects.map((r) => r.x + r.w))
+  const maxY = Math.max(...rects.map((r) => r.y + r.h))
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+}
+
+type SelectionOutline = {
+  key: string
+  artboardId: string
+  box: Rect
+  rotation: number
+}
+
+/** One outline per selected unit (loose element or whole group) when several are selected. */
+function selectionOutlines(
+  selected: WireElementModel[],
+  editingGroupId: string | null,
+): SelectionOutline[] {
+  if (selected.length < 2) return []
+  const units = new Map<string, WireElementModel[]>()
+  for (const el of selected) {
+    const key = el.groupId && el.groupId !== editingGroupId ? `g:${el.groupId}` : el.id
+    units.set(key, [...(units.get(key) || []), el])
+  }
+  if (units.size < 2) return []
+  return [...units.entries()].map(([key, els]) => {
+    if (els.length === 1) {
+      const el = els[0]
+      return {
+        key,
+        artboardId: el.artboardId,
+        box: el.type === 'line' ? normalizeRect(el.x, el.y, el.w, el.h) : { x: el.x, y: el.y, w: el.w, h: el.h },
+        rotation: el.rotation || 0,
+      }
+    }
+    return {
+      key,
+      artboardId: els[0].artboardId,
+      box: unionRects(els.map(rotatedAabb))!,
+      rotation: 0,
+    }
+  })
+}
+
 type ElementOrigin = {
   x: number
   y: number
@@ -220,6 +271,11 @@ type Interaction =
       mode: 'marquee'
       startX: number
       startY: number
+      startClient: Point
+      /** Artboard to select if the press ends without dragging. */
+      clickArtboardId: string | null
+      /** Past the drag threshold; until then the press is treated as a click. */
+      dragged?: boolean
       additive: boolean
       pointerId: number
       historyRecorded?: boolean
@@ -227,8 +283,13 @@ type Interaction =
   | {
       mode: 'move'
       startWorld: Point
+      startClient: Point
       origins: Record<string, ElementOrigin>
       ids: string[]
+      /** Past the drag threshold; until then the press is treated as a click. */
+      moved?: boolean
+      /** Selection to narrow to if the press ends without dragging. */
+      collapseTo?: string[]
       historyRecorded?: boolean
     }
   | {
@@ -429,11 +490,17 @@ export default function Canvas({
   const selectedBoardIds = [...new Set(selected.map((el) => el.artboardId))]
   const singleBoardSelection = selectedBoardIds.length === 1 ? selectedBoardIds[0] : null
   const selectionBoard = singleBoardSelection ? boardMap.get(singleBoardSelection) : null
-  const bounds = selected.length && selectionBoard ? getBounds(selected) : null
+  const multiSelected = selected.length > 1
+  // Several elements share one box that encloses their rotated extents.
+  const bounds =
+    selected.length && selectionBoard
+      ? multiSelected
+        ? unionRects(selected.map(rotatedAabb))
+        : getBounds(selected)
+      : null
   const groupSelected = sharedGroupId(elements, selectedIds)
-  const showGroupResize = Boolean(
-    bounds && (groupSelected || selected.length === 1) && !editingPathId,
-  )
+  const showGroupResize = Boolean(bounds && !editingPathId)
+  const outlines = selectionOutlines(selected, editingGroupId)
   const singleRect =
     !groupSelected && selected.length === 1 && selected[0].type === 'rect' ? selected[0] : null
 
@@ -765,42 +832,10 @@ export default function Canvas({
     const hit = hitTest(world.x, world.y)
     if (hit) return
 
+    // Empty space: drag draws a selection marquee; a plain click selects the artboard
+    // under the pointer (or clears the selection off-board). Pan is Space / middle drag.
     const boardHit = artboardAtPoint(artboards, world, activeArtboardId)
-    const additive = e.metaKey || e.ctrlKey
-    const wantMarquee = e.shiftKey || additive
-
-    if (boardHit && !wantMarquee) {
-      onActiveArtboard(boardHit.id)
-      onArtboardSelected(true)
-      onSelect([])
-      onEditGroup(null)
-      setPanning(true)
-      interaction.current = {
-        mode: 'pan',
-        startX: e.clientX,
-        startY: e.clientY,
-        origPan: { ...pan },
-      }
-      e.currentTarget.setPointerCapture(e.pointerId)
-      return
-    }
-
-    if (!wantMarquee) {
-      if (!additive) {
-        onSelect([])
-        onEditGroup(null)
-        onArtboardSelected(false)
-      }
-      setPanning(true)
-      interaction.current = {
-        mode: 'pan',
-        startX: e.clientX,
-        startY: e.clientY,
-        origPan: { ...pan },
-      }
-      e.currentTarget.setPointerCapture(e.pointerId)
-      return
-    }
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey
 
     if (!additive) {
       onSelect([])
@@ -812,10 +847,11 @@ export default function Canvas({
       mode: 'marquee',
       startX: world.x,
       startY: world.y,
+      startClient: { x: e.clientX, y: e.clientY },
+      clickArtboardId: boardHit?.id ?? null,
       additive,
       pointerId: e.pointerId,
     }
-    setMarquee({ x: world.x, y: world.y, w: 0, h: 0 })
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
@@ -867,7 +903,7 @@ export default function Canvas({
     const isDouble = lastClick.current.id === id && now - lastClick.current.time < 350
     lastClick.current = { id, time: now }
 
-    const additive = e.metaKey || e.ctrlKey
+    const additive = e.metaKey || e.ctrlKey || e.shiftKey
 
     if (isDouble && el?.type === 'text') {
       onEditText(id)
@@ -891,31 +927,38 @@ export default function Canvas({
       onEditGroup(null)
     }
 
-    let seed = [id]
-    if (!additive) {
-      seed = expandSelectionForGroups(elements, [id], editingGroupId)
-    }
+    const seed = expandSelectionForGroups(elements, [id], editingGroupId)
+    const seedSelected = seed.every((x) => selectedIds.includes(x))
 
-    let nextSelected = selectedIds
+    let movingIds = seed
+    let collapseTo: string[] | undefined
     if (additive) {
-      const expanded = expandSelectionForGroups(elements, [id], editingGroupId)
-      const allIn = expanded.every((x) => selectedIds.includes(x))
-      nextSelected = allIn
-        ? selectedIds.filter((x) => !expanded.includes(x))
-        : [...new Set([...selectedIds, ...expanded])]
+      const nextSelected = seedSelected
+        ? selectedIds.filter((x) => !seed.includes(x))
+        : [...new Set([...selectedIds, ...seed])]
       onSelect(nextSelected)
-    } else if (!seed.every((x) => selectedIds.includes(x)) || selectedIds.length !== seed.length) {
-      nextSelected = seed
-      onSelect(nextSelected)
+      // Deselecting with a modifier is a click, not the start of a drag.
+      if (seedSelected) return
+      movingIds = nextSelected
+    } else if (seedSelected) {
+      // Pressing an already-selected element drags the whole selection;
+      // a plain click (no drag) narrows the selection to that element.
+      movingIds = selectedIds
+      if (selectedIds.length !== seed.length) collapseTo = seed
+    } else {
+      onSelect(seed)
     }
 
+    startMove(e, movingIds, collapseTo)
+  }
+
+  const startMove = (
+    e: ReactPointerEvent,
+    movingIds: string[],
+    collapseTo?: string[],
+  ) => {
     const rect = getStageRect()
     const world = screenToWorld(e.clientX, e.clientY, rect, pan, zoom)
-    const movingIds = additive
-      ? nextSelected
-      : selectedIds.length && seed.every((x) => selectedIds.includes(x))
-        ? selectedIds
-        : seed
     const origins: Record<string, ElementOrigin> = {}
     for (const item of elements) {
       if (!movingIds.includes(item.id)) continue
@@ -932,11 +975,29 @@ export default function Canvas({
     interaction.current = {
       mode: 'move',
       startWorld: world,
+      startClient: { x: e.clientX, y: e.clientY },
       origins,
       ids: movingIds,
+      collapseTo,
     }
-    setDraggingElements(true)
     stageRef.current?.setPointerCapture(e.pointerId)
+  }
+
+  /** Press inside a multi-selection box: hit elements behave as usual, gaps drag the selection. */
+  const onSelectionBodyDown = (e: ReactPointerEvent) => {
+    if (spaceDown || e.button !== 0) return
+    const rect = getStageRect()
+    const world = screenToWorld(e.clientX, e.clientY, rect, pan, zoom)
+    const hit = hitTest(world.x, world.y)
+    if (hit) {
+      onElementPointerDown(e, hit.id)
+      return
+    }
+    // Modifier presses fall through to the stage (marquee).
+    if (e.shiftKey || e.metaKey || e.ctrlKey) return
+    e.stopPropagation()
+    e.preventDefault()
+    startMove(e, selectedIds)
   }
 
   const onHandleDown = (e: ReactPointerEvent, handle: ResizeHandle) => {
@@ -1039,6 +1100,12 @@ export default function Canvas({
     }
 
     if (ix.mode === 'marquee') {
+      if (!ix.dragged) {
+        const cdx = e.clientX - ix.startClient.x
+        const cdy = e.clientY - ix.startClient.y
+        if (cdx * cdx + cdy * cdy < MOVE_DRAG_PX * MOVE_DRAG_PX) return
+        ix.dragged = true
+      }
       const x = Math.min(ix.startX, world.x)
       const y = Math.min(ix.startY, world.y)
       const w = Math.abs(world.x - ix.startX)
@@ -1062,6 +1129,13 @@ export default function Canvas({
     }
 
     if (ix.mode === 'move') {
+      if (!ix.moved) {
+        const cdx = e.clientX - ix.startClient.x
+        const cdy = e.clientY - ix.startClient.y
+        if (cdx * cdx + cdy * cdy < MOVE_DRAG_PX * MOVE_DRAG_PX) return
+        ix.moved = true
+        setDraggingElements(true)
+      }
       recordEdit()
       let dx = world.x - ix.startWorld.x
       let dy = world.y - ix.startWorld.y
@@ -1287,12 +1361,19 @@ export default function Canvas({
         }
         onActiveArtboard(ix.artboardId)
         onArtboardSelected(false)
+        // Back to Select so the new element can be moved right away.
+        onClearPlace()
       }
       setDrawPreview(null)
       interaction.current = null
       return
     }
-    if (ix?.mode === 'marquee' && marquee) {
+    if (ix?.mode === 'marquee' && !ix.dragged) {
+      if (ix.clickArtboardId && !ix.additive) {
+        onActiveArtboard(ix.clickArtboardId)
+        onArtboardSelected(true)
+      }
+    } else if (ix?.mode === 'marquee' && marquee) {
       const hits = elements
         .filter((el) => {
           const ab = boardMap.get(el.artboardId)
@@ -1313,7 +1394,9 @@ export default function Canvas({
       }
       setMarquee(null)
     }
-    if (ix?.mode === 'move') {
+    if (ix?.mode === 'move' && !ix.moved) {
+      if (ix.collapseTo) onSelect(ix.collapseTo)
+    } else if (ix?.mode === 'move') {
       // Cancel transfer if selection center is outside every artboard
       const firstId = ix.ids[0]
       const first = firstId ? elements.find((el) => el.id === firstId) : null
@@ -1339,6 +1422,8 @@ export default function Canvas({
   }
 
   const cursor = spaceDown || panning ? (panning ? 'grabbing' : 'grab') : placeTool ? 'crosshair' : 'default'
+  // Pan / placement cursors win over the per-element "move" cursor.
+  const cursorLocked = cursor !== 'default'
 
   const openActions = (e: { preventDefault: () => void; clientX: number; clientY: number }, ids = selectedIds) => {
     e.preventDefault()
@@ -1366,7 +1451,9 @@ export default function Canvas({
   return (
     <div
       ref={stageRef}
-      className={`canvas-stage${svgDragOver ? ' is-svg-drag-over' : ''}`}
+      className={`canvas-stage${svgDragOver ? ' is-svg-drag-over' : ''}${
+        cursorLocked ? ' is-cursor-locked' : ''
+      }`}
       style={{ cursor }}
       onPointerDown={onStagePointerDown}
       onPointerMove={onPointerMove}
@@ -1513,6 +1600,7 @@ export default function Canvas({
                     onCornerRadiusDown={onCornerRadiusDown}
                     showRotateHandles={singleBoardSelection === ab.id}
                     onRotateDown={onRotateDown}
+                    onBodyDown={multiSelected && !placeTool ? onSelectionBodyDown : undefined}
                     rotation={
                       !groupSelected && selected.length === 1 && singleBoardSelection === ab.id
                         ? selected[0].rotation || 0
@@ -1520,17 +1608,22 @@ export default function Canvas({
                     }
                   />
                 )}
-                {!showGroupResize && selected.length > 1 && boardBounds && !editingPathId && (
-                  <div
-                    className="selection-overlay selection-overlay--multi"
-                    style={{
-                      left: boardBounds.x,
-                      top: boardBounds.y,
-                      width: boardBounds.w,
-                      height: boardBounds.h,
-                    }}
-                  />
-                )}
+                {!editingTextId &&
+                  outlines
+                    .filter((o) => o.artboardId === ab.id)
+                    .map((o) => (
+                      <div
+                        key={o.key}
+                        className="selection-item-outline"
+                        style={{
+                          left: o.box.x,
+                          top: o.box.y,
+                          width: o.box.w,
+                          height: o.box.h,
+                          transform: o.rotation ? `rotate(${o.rotation}deg)` : undefined,
+                        }}
+                      />
+                    ))}
               </div>
             </div>
           )
@@ -1560,7 +1653,7 @@ export default function Canvas({
                   ? 'Path · Click to place anchors · Drag for curves · Esc for Select'
                   : isDrawTool(placeTool)
                     ? 'Click-drag to draw · Shift constrains · Esc for Select'
-                    : 'Select · Drag to move · Shift-drag marquee · Esc clears selection'}
+                    : 'Select · Drag to move or marquee · Shift-click to add · Space-drag to pan · Esc clears selection'}
       </div>
       {menu && (
         <ActionMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />

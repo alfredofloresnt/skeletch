@@ -329,6 +329,7 @@ export default function App() {
       setEditingGroupId(null)
       setEditingPathId(null)
       setPenDraft(null)
+      setPlaceTool(null)
     },
     [recordHistory],
   )
@@ -400,9 +401,8 @@ export default function App() {
         if (!target) return
         const local = worldToLocal(target, { x: worldX, y: worldY })
         place(drag.tool, local.x, local.y, target.id)
-        // Stamp tools clear; draw tools stay selected for continued drawing.
-        if (!isDrawTool(drag.tool)) setPlaceTool(null)
-        else setPlaceTool(drag.tool)
+        // Back to Select so the new element can be moved right away.
+        setPlaceTool(null)
         window.getSelection()?.removeAllRanges()
       }
 

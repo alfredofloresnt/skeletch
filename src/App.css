@@ -1413,8 +1413,27 @@ textarea {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5);
 }
 
-.selection-overlay--multi {
-  background: rgba(31, 111, 235, 0.06);
+.selection-overlay-body {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  cursor: move;
+}
+
+/* Each member of a multi-selection keeps a visible outline. */
+.selection-item-outline {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--select);
+  pointer-events: none;
+  z-index: 9998;
+  transform-origin: center center;
+}
+
+/* Panning / placing: the stage cursor wins over element and selection cursors. */
+.canvas-stage.is-cursor-locked .wire-el,
+.canvas-stage.is-cursor-locked .selection-overlay-body {
+  cursor: inherit;
 }
 
 .resize-handle {

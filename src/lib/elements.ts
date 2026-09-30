@@ -553,7 +553,7 @@ export function scaleElementsToBounds(
       ...el,
       x: newBounds.x + (origin.x - oldBounds.x) * sx,
       y: newBounds.y + (origin.y - oldBounds.y) * sy,
-      w: Math.max(1, origin.w * sx),
+      w: origin.type === 'line' ? origin.w * sx : Math.max(1, origin.w * sx),
       h: origin.type === 'line' ? origin.h * sy : Math.max(1, origin.h * sy),
     }
     if (origin.fontSize) next.fontSize = Math.max(8, origin.fontSize * sy)
