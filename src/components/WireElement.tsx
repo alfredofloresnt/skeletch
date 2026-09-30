@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useRef,
   useState,
@@ -287,7 +288,7 @@ type WireElementProps = {
   dimmed?: boolean
 }
 
-export default function WireElement({
+function WireElement({
   el,
   selected,
   editing,
@@ -563,6 +564,9 @@ export default function WireElement({
     />
   )
 }
+
+// Memoized: during a drag only the moved elements get new objects, so the rest skip rendering.
+export default memo(WireElement)
 
 const HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 

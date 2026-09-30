@@ -231,7 +231,9 @@ function selectionOutlines(
   const units = new Map<string, WireElementModel[]>()
   for (const el of selected) {
     const key = el.groupId && el.groupId !== editingGroupId ? `g:${el.groupId}` : el.id
-    units.set(key, [...(units.get(key) || []), el])
+    const unit = units.get(key)
+    if (unit) unit.push(el)
+    else units.set(key, [el])
   }
   if (units.size < 2) return []
   return [...units.entries()].map(([key, els]) => {
@@ -256,6 +258,8 @@ function selectionOutlines(
 type ElementOrigin = {
   x: number
   y: number
+  w: number
+  h: number
   artboardId: string
   world: Point
 }
@@ -488,7 +492,8 @@ export default function Canvas({
   }, [])
 
   const boardMap = getArtboardMap(artboards)
-  const selected = elements.filter((e) => selectedIds.includes(e.id))
+  const selectedSet = new Set(selectedIds)
+  const selected = elements.filter((e) => selectedSet.has(e.id))
   const selectedBoardIds = [...new Set(selected.map((el) => el.artboardId))]
   const singleBoardSelection = selectedBoardIds.length === 1 ? selectedBoardIds[0] : null
   const selectionBoard = singleBoardSelection ? boardMap.get(singleBoardSelection) : null
@@ -934,7 +939,7 @@ export default function Canvas({
     }
 
     const seed = expandSelectionForGroups(elements, [id], editingGroupId)
-    const seedSelected = seed.every((x) => selectedIds.includes(x))
+    const seedSelected = seed.every((x) => selectedSet.has(x))
 
     let movingIds = seed
     let collapseTo: string[] | undefined
@@ -958,6 +963,14 @@ export default function Canvas({
     startMove(e, movingIds, collapseTo)
   }
 
+  // Stable identity lets memoized WireElements skip re-rendering while others move.
+  const elementPointerDownRef = useRef(onElementPointerDown)
+  elementPointerDownRef.current = onElementPointerDown
+  const stableElementPointerDown = useCallback(
+    (e: ReactPointerEvent, id: string) => elementPointerDownRef.current(e, id),
+    [],
+  )
+
   const startMove = (
     e: ReactPointerEvent,
     movingIds: string[],
@@ -966,13 +979,16 @@ export default function Canvas({
     const rect = getStageRect()
     const world = screenToWorld(e.clientX, e.clientY, rect, pan, zoom)
     const origins: Record<string, ElementOrigin> = {}
+    const moving = new Set(movingIds)
     for (const item of elements) {
-      if (!movingIds.includes(item.id)) continue
+      if (!moving.has(item.id)) continue
       const ab = boardMap.get(item.artboardId)
       if (!ab) continue
       origins[item.id] = {
         x: item.x,
         y: item.y,
+        w: Math.abs(item.w),
+        h: Math.abs(item.h),
         artboardId: item.artboardId,
         world: localToWorld(ab, { x: item.x, y: item.y }),
       }
@@ -1170,14 +1186,13 @@ export default function Canvas({
       let maxY = -Infinity
       for (const id of ix.ids) {
         const o = ix.origins[id]
-        const el = elements.find((item) => item.id === id)
-        if (!o || !el) continue
+        if (!o) continue
         const wx = o.world.x + dx
         const wy = o.world.y + dy
         minX = Math.min(minX, wx)
         minY = Math.min(minY, wy)
-        maxX = Math.max(maxX, wx + Math.abs(el.w))
-        maxY = Math.max(maxY, wy + Math.abs(el.h))
+        maxX = Math.max(maxX, wx + o.w)
+        maxY = Math.max(maxY, wy + o.h)
       }
       const center = {
         x: (minX + maxX) / 2,
@@ -1437,9 +1452,10 @@ export default function Canvas({
     setMenu({ x: e.clientX, y: e.clientY, ids })
   }
 
+  // Only compute group state while the menu is open; it scans every element.
   const menuIds = menu?.ids || selectedIds
-  const menuGroupId = sharedGroupId(elements, menuIds)
-  const menuItems = [
+  const menuGroupId = menu ? sharedGroupId(elements, menuIds) : null
+  const menuItems = menu && [
     {
       id: 'group',
       label: 'Group',
@@ -1542,9 +1558,9 @@ export default function Canvas({
                     <WireElement
                       key={el.id}
                       el={el}
-                      selected={selectedIds.includes(el.id)}
+                      selected={selectedSet.has(el.id)}
                       editing={editingTextId === el.id}
-                      onPointerDown={onElementPointerDown}
+                      onPointerDown={stableElementPointerDown}
                       onCommitText={onCommitText}
                       onCancelTextEdit={onCancelTextEdit}
                       dimmed={dimmed}
@@ -1666,7 +1682,7 @@ export default function Canvas({
                     ? 'Click-drag to draw · Shift constrains · Esc for Select'
                     : 'Select · Drag to move or marquee · Shift-click to add · Space-drag to pan · Esc clears selection'}
       </div>
-      {menu && (
+      {menu && menuItems && (
         <ActionMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
       )}
     </div>

@@ -246,11 +246,12 @@ export default function App() {
         setSelectedIds([id])
         setArtboardSelected(false)
       }
-      const current = elements.find((el) => el.id === id)
+      // Read from the ref so this callback stays stable across element edits.
+      const current = documentRef.current?.elements.find((el) => el.id === id)
       if (!current || current.type !== 'text' || (current.text || '') === text) return
       updateElement(id, { text })
     },
-    [elements, updateElement],
+    [updateElement],
   )
 
   const cancelTextEdit = useCallback((id: string) => {
@@ -1001,10 +1002,11 @@ export default function App() {
     }
   }
 
-  const selectedForSave = elements.filter((el) =>
-    expandSelectionForGroups(elements, selectedIds, editingGroupId).includes(el.id),
-  )
-  const canSaveComponent = canSaveSelection(selectedForSave)
+  const canSaveComponent = useMemo(() => {
+    const ids = new Set(expandSelectionForGroups(elements, selectedIds, editingGroupId))
+    return canSaveSelection(elements.filter((el) => ids.has(el.id)))
+  }, [elements, selectedIds, editingGroupId])
+  const canGroupSelection = useMemo(() => canGroup(elements, selectedIds), [elements, selectedIds])
 
   const scopeZ = (fn: (scoped: WireElement[]) => WireElement[]) => {
     const boardId =
@@ -1105,7 +1107,7 @@ export default function App() {
           onGroup={handleGroup}
           onUngroup={handleUngroup}
           onRenameGroup={handleRenameGroup}
-          canGroupSelection={canGroup(elements, selectedIds)}
+          canGroupSelection={canGroupSelection}
         />
 
         <div className="stage-wrap" ref={stageWrapRef}>
@@ -1226,7 +1228,7 @@ export default function App() {
           onRenameGroup={handleRenameGroup}
           onSaveAsComponent={saveSelectionAsComponent}
           canSaveAsComponent={canSaveComponent}
-          canGroupSelection={canGroup(elements, selectedIds)}
+          canGroupSelection={canGroupSelection}
           onRotateSelection={handleRotateSelection}
           editingGroupId={editingGroupId}
           onEditGroup={setEditingGroupId}

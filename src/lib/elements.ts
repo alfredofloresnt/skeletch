@@ -518,12 +518,15 @@ export function expandSelectionForGroups(
   ids: string[],
   editingGroupId: string | null,
 ): string[] {
+  // Two linear passes: runs on every drag frame with large selections.
   const set = new Set(ids)
-  for (const id of ids) {
-    const el = elements.find((e) => e.id === id)
-    if (!el?.groupId) continue
-    if (editingGroupId && el.groupId === editingGroupId) continue
-    for (const m of getGroupMembers(elements, el.groupId)) set.add(m.id)
+  const groups = new Set<string>()
+  for (const el of elements) {
+    if (el.groupId && el.groupId !== editingGroupId && set.has(el.id)) groups.add(el.groupId)
+  }
+  if (!groups.size) return [...set]
+  for (const el of elements) {
+    if (el.groupId && groups.has(el.groupId)) set.add(el.id)
   }
   return [...set]
 }
@@ -700,14 +703,19 @@ export function sendToBack(elements: WireElement[], ids: string[]): WireElement[
 
 export function sharedGroupId(elements: WireElement[], ids: string[]): string | null {
   if (!ids.length) return null
-  const members = ids.map((id) => elements.find((e) => e.id === id)).filter((m): m is WireElement => Boolean(m))
-  if (!members.length) return null
-  const gid = members[0].groupId
+  const idSet = new Set(ids)
+  let gid: string | null | undefined
+  let members = 0
+  for (const el of elements) {
+    if (!idSet.has(el.id)) continue
+    if (gid === undefined) gid = el.groupId || null
+    if (!gid || el.groupId !== gid) return null
+    members += 1
+  }
   if (!gid) return null
-  if (!members.every((m) => m.groupId === gid)) return null
-  const all = getGroupMembers(elements, gid)
-  if (all.length !== members.length) return null
-  return gid
+  let all = 0
+  for (const el of elements) if (el.groupId === gid) all += 1
+  return all === members ? gid : null
 }
 
 /** Top-level layer units fully covered by ids (groups count as 1). */

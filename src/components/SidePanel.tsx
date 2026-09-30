@@ -389,6 +389,7 @@ export default function SidePanel({
   canGroupSelection,
 }: SidePanelProps) {
   const tree = buildLayerTree(elements)
+  const selectedSet = new Set(selectedIds)
   const [menu, setMenu] = useState<ContextMenu | null>(null)
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
   const [dropHint, setDropHint] = useState<DropHint | null>(null)
@@ -901,7 +902,7 @@ export default function SidePanel({
                     const key = `group:${row.groupId}`
                     const childIds = row.children.map((c) => c.id)
                     const selected =
-                      childIds.length > 0 && childIds.every((id) => selectedIds.includes(id))
+                      childIds.length > 0 && childIds.every((id) => selectedSet.has(id))
                     const open = editingGroupId === row.groupId
                     const renaming = renamingGroupId === row.groupId
                     return (
@@ -959,7 +960,7 @@ export default function SidePanel({
                           row.children.map((el) => (
                             <div
                               key={el.id}
-                              className={`layer-row layer-row--child${selectedIds.includes(el.id) ? ' is-selected' : ''}${dragId === el.id ? ' is-dragging' : ''}${dropClass(el.id, row.groupId)}`}
+                              className={`layer-row layer-row--child${selectedSet.has(el.id) ? ' is-selected' : ''}${dragId === el.id ? ' is-dragging' : ''}${dropClass(el.id, row.groupId)}`}
                               draggable
                               onDragStart={(e) => onDragStart(e, el.id, row.groupId)}
                               onDragOver={(e) => onDragOverRow(e, el.id, row.groupId)}
@@ -995,7 +996,7 @@ export default function SidePanel({
                   }
 
                   const el = row.el
-                  const selected = selectedIds.includes(el.id)
+                  const selected = selectedSet.has(el.id)
                   return (
                     <li
                       key={el.id}

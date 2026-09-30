@@ -125,7 +125,8 @@ export default function Inspector({
   editingGroupId,
   onEditGroup,
 }: InspectorProps) {
-  const selected = elements.filter((e) => selectedIds.includes(e.id))
+  const selectedSet = new Set(selectedIds)
+  const selected = elements.filter((e) => selectedSet.has(e.id))
   const groupId = sharedGroupId(elements, selectedIds)
   const groupMeta = groupId
     ? elements.find((e) => e.groupId === groupId)
