@@ -34,6 +34,14 @@ function rotationStyle(rotation?: number): CSSProperties {
   }
 }
 
+/**
+ * Stroke centered on the box edge (half inside, half outside), so shapes placed edge to edge
+ * share one line instead of doubling it. An inset outline follows border-radius and skips layout.
+ */
+function centeredStrokeStyle(sw: number, color: string): CSSProperties {
+  return { outline: `${sw}px solid ${color}`, outlineOffset: -sw / 2 }
+}
+
 function fillImageStyle(src?: string | null): CSSProperties {
   if (!src) return {}
   return {
@@ -366,11 +374,10 @@ function WireElement({
     const sw = el.strokeWidth || 0
     const hasStroke = sw > 0 && isVisiblePaint(el.stroke)
     if (hasStroke && isGradient(el.stroke)) {
-      const inset = sw / 2
       return (
         <div
           className={`wire-el wire-el--circle${selected ? ' is-selected' : ''}`}
-          style={{ ...style, overflow: 'hidden' }}
+          style={style}
           data-id={el.id}
           onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
         >
@@ -389,8 +396,8 @@ function WireElement({
             <ellipse
               cx="50"
               cy="50"
-              rx={Math.max(0, 50 - (inset / Math.max(el.w, 1)) * 100)}
-              ry={Math.max(0, 50 - (inset / Math.max(el.h, 1)) * 100)}
+              rx="50"
+              ry="50"
               fill={el.fillImage ? 'none' : svgPaintAttr(el.fill, `${el.id}-fill`)}
               stroke={svgPaintAttr(el.stroke, `${el.id}-stroke`)}
               strokeWidth={sw}
@@ -406,10 +413,9 @@ function WireElement({
         style={{
           ...style,
           borderRadius: '50%',
-          border: hasStroke ? `${sw}px solid ${toSolidCssColor(el.stroke)}` : 'none',
+          ...(hasStroke ? centeredStrokeStyle(sw, toSolidCssColor(el.stroke)) : null),
           background: el.fillImage ? undefined : cssBackgroundPaint(el.fill),
           ...fillImageStyle(el.fillImage),
-          boxSizing: 'border-box',
           overflow: 'hidden',
         }}
         data-id={el.id}
@@ -516,7 +522,7 @@ function WireElement({
     return (
       <div
         className={`wire-el wire-el--rect${selected ? ' is-selected' : ''}`}
-        style={{ ...style, overflow: 'hidden' }}
+        style={style}
         data-id={el.id}
         onPointerDown={onPointerDown ? (e) => onPointerDown(e, el.id) : undefined}
       >
@@ -533,12 +539,10 @@ function WireElement({
         <svg className="el-svg" width="100%" height="100%">
           <SvgPaintDefs idPrefix={el.id} fill={el.fill} stroke={el.stroke} />
           <rect
-            x={sw / 2}
-            y={sw / 2}
-            width={Math.max(0, el.w - sw)}
-            height={Math.max(0, el.h - sw)}
-            rx={Math.max(0, rx - sw / 2)}
-            ry={Math.max(0, ry - sw / 2)}
+            width={el.w}
+            height={el.h}
+            rx={rx}
+            ry={ry}
             fill={el.fillImage ? 'none' : svgPaintAttr(el.fill, `${el.id}-fill`)}
             stroke={svgPaintAttr(el.stroke, `${el.id}-stroke`)}
             strokeWidth={sw}
@@ -552,11 +556,10 @@ function WireElement({
       className={`wire-el wire-el--rect${selected ? ' is-selected' : ''}`}
       style={{
         ...style,
-        border: hasStroke ? `${sw}px solid ${toSolidCssColor(el.stroke)}` : 'none',
+        ...(hasStroke ? centeredStrokeStyle(sw, toSolidCssColor(el.stroke)) : null),
         background: el.fillImage ? undefined : cssBackgroundPaint(el.fill),
         ...fillImageStyle(el.fillImage),
         borderRadius: el.cornerRadius,
-        boxSizing: 'border-box',
         overflow: 'hidden',
       }}
       data-id={el.id}

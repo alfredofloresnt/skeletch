@@ -124,7 +124,7 @@ function paintText(ctx: CanvasRenderingContext2D, el: WireElement): void {
   ctx.restore()
 }
 
-/** CSS border-box: fill outer box, stroke fully inside. */
+/** Fill the box, then stroke centered on its edge (matches WireElement's centered stroke). */
 function paintBorderBoxShape(
   ctx: CanvasRenderingContext2D,
   el: WireElement,
@@ -150,10 +150,8 @@ function paintBorderBoxShape(
       ctx.ellipse(cx, cy, el.w / 2, el.h / 2, 0, 0, Math.PI * 2)
     })
     if (strokeVisible) {
-      const rx = Math.max(0, el.w / 2 - sw / 2)
-      const ry = Math.max(0, el.h / 2 - sw / 2)
       ctx.beginPath()
-      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
+      ctx.ellipse(cx, cy, el.w / 2, el.h / 2, 0, 0, Math.PI * 2)
       ctx.strokeStyle = canvasPaintStyle(ctx, el.stroke, box)
       ctx.lineWidth = sw
       ctx.stroke()
@@ -169,16 +167,10 @@ function paintBorderBoxShape(
   }
   paintFillImage(ctx, el, images, () => roundRect(ctx, el.x, el.y, el.w, el.h, r))
   if (strokeVisible) {
-    const inset = sw / 2
-    const iw = el.w - sw
-    const ih = el.h - sw
-    if (iw > 0 && ih > 0) {
-      const ir = Math.max(0, r - inset)
-      roundRect(ctx, el.x + inset, el.y + inset, iw, ih, ir)
-      ctx.strokeStyle = canvasPaintStyle(ctx, el.stroke, box)
-      ctx.lineWidth = sw
-      ctx.stroke()
-    }
+    roundRect(ctx, el.x, el.y, el.w, el.h, r)
+    ctx.strokeStyle = canvasPaintStyle(ctx, el.stroke, box)
+    ctx.lineWidth = sw
+    ctx.stroke()
   }
 }
 

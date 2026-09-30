@@ -552,12 +552,17 @@ export function scaleElementsToBounds(
   return elements.map((el) => {
     const origin = originById.get(el.id)
     if (!origin) return el
+    // Round edges (not sizes) to whole pixels so children that touched keep touching.
+    const x = Math.round(newBounds.x + (origin.x - oldBounds.x) * sx)
+    const y = Math.round(newBounds.y + (origin.y - oldBounds.y) * sy)
+    const w = Math.round(newBounds.x + (origin.x + origin.w - oldBounds.x) * sx) - x
+    const h = Math.round(newBounds.y + (origin.y + origin.h - oldBounds.y) * sy) - y
     const next: WireElement = {
       ...el,
-      x: newBounds.x + (origin.x - oldBounds.x) * sx,
-      y: newBounds.y + (origin.y - oldBounds.y) * sy,
-      w: origin.type === 'line' ? origin.w * sx : Math.max(1, origin.w * sx),
-      h: origin.type === 'line' ? origin.h * sy : Math.max(1, origin.h * sy),
+      x,
+      y,
+      w: origin.type === 'line' ? w : Math.max(1, w),
+      h: origin.type === 'line' ? h : Math.max(1, h),
     }
     if (origin.fontSize) next.fontSize = Math.max(8, origin.fontSize * sy)
     return next

@@ -2,8 +2,12 @@ import { GRID_SIZE, MIN_SIZE } from './constants'
 import { pointInPathShape } from './pathGeometry'
 import type { Point, Rect, ResizeHandle, WireElement } from './types'
 
+/**
+ * Snap to the layout grid, or to whole pixels when the grid is off. Fractional coordinates
+ * get rounded to device pixels per element, so edges that should touch drift apart visually.
+ */
 export function snap(value: number, enabled: boolean, grid = GRID_SIZE): number {
-  if (!enabled) return value
+  if (!enabled) return Math.round(value)
   return Math.round(value / grid) * grid
 }
 

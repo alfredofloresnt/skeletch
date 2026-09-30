@@ -1140,12 +1140,8 @@ export default function Canvas({
       recordEdit()
       let dx = world.x - ix.startWorld.x
       let dy = world.y - ix.startWorld.y
-      if (snapOn) {
-        const nx = snap(ix.origin.x + dx, true)
-        const ny = snap(ix.origin.y + dy, true)
-        dx = nx - ix.origin.x
-        dy = ny - ix.origin.y
-      }
+      dx = snap(ix.origin.x + dx, snapOn) - ix.origin.x
+      dy = snap(ix.origin.y + dy, snapOn) - ix.origin.y
       onMoveArtboard(ix.artboardId, ix.origin.x + dx, ix.origin.y + dy)
       return
     }
@@ -1164,15 +1160,15 @@ export default function Canvas({
 
       const firstId = ix.ids[0]
       const firstOrigin = firstId ? ix.origins[firstId] : null
-      if (snapOn && firstOrigin) {
+      if (firstOrigin) {
         const tentative = { x: firstOrigin.world.x + dx, y: firstOrigin.world.y + dy }
         const target =
           artboardAtPoint(artboards, tentative, activeArtboardId) ||
           boardMap.get(firstOrigin.artboardId)
         if (target) {
           const local = worldToLocal(target, tentative)
-          const sx = snap(local.x, true)
-          const sy = snap(local.y, true)
+          const sx = snap(local.x, snapOn)
+          const sy = snap(local.y, snapOn)
           const snappedWorld = localToWorld(target, { x: sx, y: sy })
           dx = snappedWorld.x - firstOrigin.world.x
           dy = snappedWorld.y - firstOrigin.world.y
