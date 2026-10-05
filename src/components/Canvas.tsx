@@ -363,12 +363,13 @@ type CanvasProps = {
   activeArtboardId: string
   elements: WireElementModel[]
   selectedIds: string[]
-  artboardSelected: boolean
+  selectedArtboardIds: string[]
   snapOn: boolean
   placeTool: PlaceTool | null
   onSelect: (ids: string[]) => void
   onActiveArtboard: (id: string) => void
   onArtboardSelected: (selected: boolean) => void
+  onToggleArtboard: (id: string) => void
   onMoveElements: (
     updates: { id: string; x: number; y: number; artboardId: string }[],
   ) => void
@@ -411,6 +412,7 @@ type CanvasProps = {
   onImportSvg: (svgText: string, artboardId: string, center?: Point) => void
   onGroup?: (ids?: string[]) => void
   onUngroup?: (groupId: string) => void
+  onToggleLock?: (ids: string[]) => void
 }
 
 export default function Canvas({
@@ -418,12 +420,13 @@ export default function Canvas({
   activeArtboardId,
   elements,
   selectedIds,
-  artboardSelected,
+  selectedArtboardIds,
   snapOn,
   placeTool,
   onSelect,
   onActiveArtboard,
   onArtboardSelected,
+  onToggleArtboard,
   onMoveElements,
   onMoveArtboard,
   onResizeElement,
@@ -452,6 +455,7 @@ export default function Canvas({
   onImportSvg,
   onGroup,
   onUngroup,
+  onToggleLock,
 }: CanvasProps) {
   const stageRef = useRef<HTMLDivElement>(null)
   const [spaceDown, setSpaceDown] = useState(false)
@@ -870,6 +874,10 @@ export default function Canvas({
     if (spaceDown || e.button === 1) return
     e.stopPropagation()
     e.preventDefault()
+    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      onToggleArtboard(artboardId)
+      return
+    }
     onActiveArtboard(artboardId)
     onArtboardSelected(true)
     onSelect([])
@@ -981,7 +989,7 @@ export default function Canvas({
     const origins: Record<string, ElementOrigin> = {}
     const moving = new Set(movingIds)
     for (const item of elements) {
-      if (!moving.has(item.id)) continue
+      if (!moving.has(item.id) || item.locked) continue
       const ab = boardMap.get(item.artboardId)
       if (!ab) continue
       origins[item.id] = {
@@ -999,7 +1007,7 @@ export default function Canvas({
       startWorld: world,
       startClient: { x: e.clientX, y: e.clientY },
       origins,
-      ids: movingIds,
+      ids: movingIds.filter((id) => origins[id]),
       collapseTo,
     }
     stageRef.current?.setPointerCapture(e.pointerId)
@@ -1026,6 +1034,7 @@ export default function Canvas({
     e.stopPropagation()
     e.preventDefault()
     if (!showGroupResize || !bounds || !selectionBoard) return
+    if (selected.some((el) => el.locked)) return
     const rect = getStageRect()
     const world = screenToWorld(e.clientX, e.clientY, rect, pan, zoom)
 
@@ -1451,6 +1460,9 @@ export default function Canvas({
   // Only compute group state while the menu is open; it scans every element.
   const menuIds = menu?.ids || selectedIds
   const menuGroupId = menu ? sharedGroupId(elements, menuIds) : null
+  const menuLocked = menu
+    ? elements.filter((el) => menuIds.includes(el.id)).every((el) => el.locked)
+    : false
   const menuItems = menu && [
     {
       id: 'group',
@@ -1463,6 +1475,11 @@ export default function Canvas({
       label: 'Ungroup',
       disabled: !menuGroupId,
       onSelect: () => menuGroupId && onUngroup?.(menuGroupId),
+    },
+    {
+      id: 'lock',
+      label: menuLocked ? 'Unlock' : 'Lock',
+      onSelect: () => onToggleLock?.(menuIds),
     },
   ]
 
@@ -1513,7 +1530,7 @@ export default function Canvas({
         {artboards.map((ab) => {
           const boardEls = elements.filter((el) => el.artboardId === ab.id)
           const isActive = ab.id === activeArtboardId
-          const boardSelected = isActive && artboardSelected && !selectedIds.length
+          const boardSelected = selectedArtboardIds.includes(ab.id)
           const boardBounds =
             isActive && singleBoardSelection === ab.id && bounds ? bounds : null
           return (

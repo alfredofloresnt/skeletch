@@ -13,7 +13,7 @@ A low-fidelity wireframe editor for sketching UI layouts in the browser. Built w
 - **Custom components** — save a selection as a reusable component from Layers, Components, or Inspector; stored in the `.wireframe` and placeable from Components
 - **Groups & layers** — group elements, double-click to edit inside a group, reorder layers for the active board, and control depth in the inspector
 - **Inspector** — position, size, text, stroke, fill, opacity, corner radius, and layer depth
-- **Portable files** — save and open `.wireframe` JSON documents (v2 multi-artboard; includes variables and components; v1 files migrate); export the active artboard as PNG
+- **Portable files** — save and open `.wireframe` JSON documents (v2 multi-artboard; includes variables and components; v1 files migrate); export the active artboard as PNG, or several selected artboards as a ZIP of PNGs
 
 ## Shortcuts
 
@@ -22,6 +22,7 @@ A low-fidelity wireframe editor for sketching UI layouts in the browser. Built w
 | Pan | Space + drag, or middle-mouse drag |
 | Zoom | Scroll |
 | Multi-select | Shift or ⌘/Ctrl + click, or drag on empty space (marquee) |
+| Multi-select artboards | Shift or ⌘/Ctrl + click an artboard name (canvas or Artboards panel) |
 | Undo | ⌘/Ctrl + Z |
 | Copy / Paste | ⌘/Ctrl + C / V |
 | Group / Ungroup | ⌘/Ctrl + G / ⌘/Ctrl + Shift + G |

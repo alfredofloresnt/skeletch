@@ -364,6 +364,13 @@ textarea {
   color: var(--muted);
 }
 
+.export-button .export-chevron {
+  width: 12px;
+  height: 12px;
+  margin-right: -0.25rem;
+  opacity: 0.8;
+}
+
 .prompt-button.is-copied {
   border-color: rgba(74, 222, 128, 0.45);
   color: #bbf7d0;
@@ -1009,6 +1016,14 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.layer-lock {
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-left: 0.4rem;
+  vertical-align: -0.1rem;
+  color: var(--muted);
 }
 
 .layer-z {

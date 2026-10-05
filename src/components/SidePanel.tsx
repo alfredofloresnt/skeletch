@@ -146,6 +146,15 @@ function PaletteButton({
   )
 }
 
+function IconLock() {
+  return (
+    <svg className="layer-lock" viewBox="0 0 24 24" aria-label="Locked" role="img">
+      <rect x="5" y="11" width="14" height="9" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  )
+}
+
 function IconSelect() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden>
@@ -330,7 +339,9 @@ type SidePanelProps = {
   onDeleteVariable: (id: string) => void
   artboards: Artboard[]
   activeArtboardId: string
+  selectedArtboardIds: string[]
   onSelectArtboard: (id: string) => void
+  onToggleArtboard: (id: string) => void
   onAddArtboard: () => void
   onAddArtboardPreset: (presetId: string) => void
   onDuplicateArtboard: () => void
@@ -347,6 +358,7 @@ type SidePanelProps = {
   onEditGroup: (groupId: string | null) => void
   onGroup?: (ids?: string[]) => void
   onUngroup?: (groupId: string) => void
+  onToggleLock?: (ids: string[]) => void
   onRenameGroup?: (groupId: string, name: string) => void
   canGroupSelection?: boolean
 }
@@ -368,7 +380,9 @@ export default function SidePanel({
   onDeleteVariable,
   artboards,
   activeArtboardId,
+  selectedArtboardIds,
   onSelectArtboard,
+  onToggleArtboard,
   onAddArtboard,
   onAddArtboardPreset,
   onDuplicateArtboard,
@@ -385,6 +399,7 @@ export default function SidePanel({
   onEditGroup,
   onGroup,
   onUngroup,
+  onToggleLock,
   onRenameGroup,
   canGroupSelection,
 }: SidePanelProps) {
@@ -551,6 +566,13 @@ export default function SidePanel({
       label: 'Ungroup',
       disabled: !menuGroupId,
       onSelect: () => menuGroupId && onUngroup?.(menuGroupId),
+    },
+    {
+      id: 'lock',
+      label: elements.filter((el) => menuIds.includes(el.id)).every((el) => el.locked)
+        ? 'Unlock'
+        : 'Lock',
+      onSelect: () => onToggleLock?.(menuIds),
     },
     {
       id: 'rename',
@@ -844,8 +866,20 @@ export default function SidePanel({
                 {artboards.map((ab) => (
                   <li
                     key={ab.id}
-                    className={`layer-row${ab.id === activeArtboardId ? ' is-selected' : ''}`}
-                    onClick={() => onSelectArtboard(ab.id)}
+                    className={`layer-row${
+                      (
+                        selectedArtboardIds.length
+                          ? selectedArtboardIds.includes(ab.id)
+                          : ab.id === activeArtboardId
+                      )
+                        ? ' is-selected'
+                        : ''
+                    }`}
+                    onClick={(e) =>
+                      e.shiftKey || e.metaKey || e.ctrlKey
+                        ? onToggleArtboard(ab.id)
+                        : onSelectArtboard(ab.id)
+                    }
                   >
                     <span className="layer-type">{ab.presetId}</span>
                     <span className="layer-name">{ab.name}</span>
@@ -987,7 +1021,10 @@ export default function SidePanel({
                             >
                               <DropLine rowKey={el.id} scope={row.groupId} />
                               <span className="layer-type">{el.type}</span>
-                              <span className="layer-name">{el.name}</span>
+                              <span className="layer-name">
+                {el.name}
+                {el.locked && <IconLock />}
+              </span>
                               <span className="layer-z">z {el.z}</span>
                             </div>
                           ))}
@@ -1028,7 +1065,10 @@ export default function SidePanel({
                     >
                       <DropLine rowKey={el.id} scope="tree" />
                       <span className="layer-type">{el.type}</span>
-                      <span className="layer-name">{el.name}</span>
+                      <span className="layer-name">
+                {el.name}
+                {el.locked && <IconLock />}
+              </span>
                       <span className="layer-z">z {el.z}</span>
                     </li>
                   )

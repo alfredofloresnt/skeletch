@@ -131,6 +131,8 @@ export interface WireElement extends LayoutPart {
   artboardId: string
   name?: string
   groupId?: string | null
+  /** Locked elements stay selectable but cannot be moved or resized. */
+  locked?: boolean
   groupName?: string
   groupKind?: string
   /** Bound design variable ids (resolved values stay on fill / fontSize / cornerRadius). */

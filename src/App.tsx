@@ -47,7 +47,7 @@ import {
   isAppClipboardTransfer,
   writeAppClipboardMarker,
 } from './lib/appClipboard'
-import { exportArtboardPng } from './lib/exportPng'
+import { exportArtboardPng, exportArtboardsZip } from './lib/exportPng'
 import { canAcceptFillImage, loadHtmlImage, readClipboardImage } from './lib/fillImage'
 import { importSvg, readSvgFromTransfer } from './lib/importSvg'
 import { FRAME_PRESETS, MAX_ZOOM, MIN_SIZE, MIN_ZOOM } from './lib/constants'
@@ -106,6 +106,8 @@ export default function App() {
   const [elements, setElements] = useState<WireElement[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [artboardSelected, setArtboardSelected] = useState(false)
+  /** Extra artboards picked with Shift; only counts while it includes the active board. */
+  const [artboardSelection, setArtboardSelection] = useState<string[]>([])
   const [snapOn, setSnapOn] = useState(true)
   const [placeTool, setPlaceTool] = useState<PlaceTool | null>(null)
   const [components, setComponents] = useState<CustomComponentDef[]>([])
@@ -135,6 +137,44 @@ export default function App() {
   const activeArtboard =
     artboards.find((ab) => ab.id === activeArtboardId) || artboards[0] || initialBoard
   const activeElements = elementsOnArtboard(elements, activeArtboard.id)
+  const selectedArtboardIds = useMemo(() => {
+    if (!artboardSelected || selectedIds.length) return []
+    const ids = artboardSelection.filter((id) => artboards.some((ab) => ab.id === id))
+    return ids.includes(activeArtboardId) ? ids : [activeArtboardId]
+  }, [artboardSelected, selectedIds.length, artboardSelection, artboards, activeArtboardId])
+
+  const selectSingleArtboard = (selected: boolean) => {
+    setArtboardSelected(selected)
+    setArtboardSelection([])
+  }
+
+  const toggleArtboardSelection = (id: string) => {
+    let next: string[]
+    if (selectedArtboardIds.includes(id)) {
+      next = selectedArtboardIds.filter((x) => x !== id)
+      if (!next.length) return
+    } else {
+      next = [...selectedArtboardIds, id]
+    }
+    setArtboardSelection(next)
+    setActiveArtboardId(selectedArtboardIds.includes(id) ? next[next.length - 1] : id)
+    setSelectedIds([])
+    setArtboardSelected(true)
+    setEditingGroupId(null)
+  }
+
+  const exportArtboards = async (boardIds: string[]) => {
+    try {
+      const boards = artboards.filter((ab) => boardIds.includes(ab.id))
+      if (boards.length > 1) {
+        await exportArtboardsZip(boards, elements)
+      } else if (boards.length === 1) {
+        await exportArtboardPng(boards[0], elementsOnArtboard(elements, boards[0].id))
+      }
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Could not export')
+    }
+  }
 
   documentRef.current = {
     artboards,
@@ -535,7 +575,7 @@ export default function App() {
     setElements((prev) => prev.filter((el) => el.artboardId !== activeArtboardId))
     setActiveArtboardId(nextActive.id)
     setSelectedIds([])
-    setArtboardSelected(true)
+    selectSingleArtboard(true)
     setEditingGroupId(null)
   }
 
@@ -592,6 +632,15 @@ export default function App() {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault()
         undo()
+        return
+      }
+
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault()
+        const ids = elements.filter((el) => el.artboardId === activeArtboardId).map((el) => el.id)
+        if (!ids.length) return
+        setSelectedIds(expandSelectionForGroups(elements, ids, editingGroupId))
+        setArtboardSelected(false)
         return
       }
 
@@ -689,7 +738,7 @@ export default function App() {
         setElements((prev) => prev.filter((el) => el.artboardId !== activeArtboardId))
         setActiveArtboardId(nextActive.id)
         setSelectedIds([])
-        setArtboardSelected(true)
+        selectSingleArtboard(true)
         setEditingGroupId(null)
         return
       }
@@ -712,7 +761,7 @@ export default function App() {
         const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
         setElements((prev) =>
           prev.map((el) =>
-            selectedIds.includes(el.id) ? { ...el, x: el.x + dx, y: el.y + dy } : el,
+            selectedIds.includes(el.id) && !el.locked ? { ...el, x: el.x + dx, y: el.y + dy } : el,
           ),
         )
       }
@@ -906,6 +955,16 @@ export default function App() {
     setEditingGroupId(null)
   }
 
+  const handleToggleLock = (ids: string[] = selectedIds) => {
+    const targets = elements.filter((el) => ids.includes(el.id))
+    if (!targets.length) return
+    const lock = !targets.every((el) => el.locked)
+    recordHistory()
+    setElements((prev) =>
+      prev.map((el) => (ids.includes(el.id) ? { ...el, locked: lock || undefined } : el)),
+    )
+  }
+
   const handleRenameGroup = (groupId: string, name: string) => {
     recordHistory()
     setElements((prev) => renameGroup(prev, groupId, name))
@@ -1031,7 +1090,12 @@ export default function App() {
         onAddArtboard={addArtboard}
         onDuplicateArtboard={duplicateArtboard}
         onDeleteArtboard={deleteArtboard}
-        onExport={() => exportArtboardPng(activeArtboard, activeElements)}
+        selectedExportCount={Math.max(selectedArtboardIds.length, 1)}
+        totalExportCount={artboards.length}
+        onExportSelected={() =>
+          exportArtboards(selectedArtboardIds.length ? selectedArtboardIds : [activeArtboardId])
+        }
+        onExportAll={() => exportArtboards(artboards.map((ab) => ab.id))}
         onFit={fitArtboard}
         onSave={handleSave}
         onOpen={handleOpen}
@@ -1067,12 +1131,14 @@ export default function App() {
           onDeleteVariable={handleDeleteVariable}
           artboards={artboards}
           activeArtboardId={activeArtboardId}
+          selectedArtboardIds={selectedArtboardIds}
           onSelectArtboard={(id) => {
             setActiveArtboardId(id)
             setSelectedIds([])
-            setArtboardSelected(true)
+            selectSingleArtboard(true)
             setEditingGroupId(null)
           }}
+          onToggleArtboard={toggleArtboardSelection}
           onAddArtboard={addArtboard}
           onAddArtboardPreset={addArtboardPreset}
           onDuplicateArtboard={duplicateArtboard}
@@ -1106,6 +1172,7 @@ export default function App() {
           onEditGroup={setEditingGroupId}
           onGroup={handleGroup}
           onUngroup={handleUngroup}
+          onToggleLock={handleToggleLock}
           onRenameGroup={handleRenameGroup}
           canGroupSelection={canGroupSelection}
         />
@@ -1116,12 +1183,13 @@ export default function App() {
             activeArtboardId={activeArtboardId}
             elements={elements}
             selectedIds={selectedIds}
-            artboardSelected={artboardSelected}
+            selectedArtboardIds={selectedArtboardIds}
             snapOn={snapOn}
             placeTool={placeTool}
             onSelect={setSelectedIds}
             onActiveArtboard={setActiveArtboardId}
-            onArtboardSelected={setArtboardSelected}
+            onArtboardSelected={selectSingleArtboard}
+            onToggleArtboard={toggleArtboardSelection}
             onMoveElements={(updates) => {
               const map = Object.fromEntries(updates.map((u) => [u.id, u]))
               setElements((prev) =>
@@ -1183,6 +1251,7 @@ export default function App() {
             onImportSvg={placeImportedSvg}
             onGroup={handleGroup}
             onUngroup={handleUngroup}
+          onToggleLock={handleToggleLock}
           />
         </div>
 

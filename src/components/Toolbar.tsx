@@ -18,7 +18,10 @@ type ToolbarProps = {
   onAddArtboard: () => void
   onDuplicateArtboard: () => void
   onDeleteArtboard: () => void
-  onExport: () => void
+  selectedExportCount: number
+  totalExportCount: number
+  onExportSelected: () => void
+  onExportAll: () => void
   onFit: () => void
   onSave: () => void
   onOpen: (file: File) => void
@@ -38,7 +41,10 @@ export default function Toolbar({
   onAddArtboard,
   onDuplicateArtboard,
   onDeleteArtboard,
-  onExport,
+  selectedExportCount,
+  totalExportCount,
+  onExportSelected,
+  onExportAll,
   onFit,
   onSave,
   onOpen,
@@ -49,6 +55,8 @@ export default function Toolbar({
   const promptBtnRef = useRef<HTMLButtonElement>(null)
   const [promptMenu, setPromptMenu] = useState<{ x: number; y: number } | null>(null)
   const [promptStatus, setPromptStatus] = useState<'copied' | 'failed' | null>(null)
+  const exportBtnRef = useRef<HTMLButtonElement>(null)
+  const [exportMenu, setExportMenu] = useState<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     if (!promptStatus) return
@@ -72,6 +80,18 @@ export default function Toolbar({
     if (!rect) return
     setPromptMenu({ x: rect.left, y: rect.bottom + 4 })
   }
+
+  const toggleExportMenu = () => {
+    if (exportMenu) {
+      setExportMenu(null)
+      return
+    }
+    const rect = exportBtnRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setExportMenu({ x: rect.left, y: rect.bottom + 4 })
+  }
+
+  const exportFormat = (count: number) => (count > 1 ? `ZIP of ${count} PNGs` : 'PNG')
 
   return (
     <header className="toolbar">
@@ -279,10 +299,39 @@ export default function Toolbar({
             </button>
           </Tooltip>
         </div>
-        <button type="button" className="tb-btn tb-btn--primary" onClick={onExport}>
+        <button
+          ref={exportBtnRef}
+          type="button"
+          className="tb-btn tb-btn--primary export-button"
+          onClick={toggleExportMenu}
+          // Keep ActionMenu's outside-pointerdown from closing then reopening on the same click.
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-haspopup="menu"
+          aria-expanded={Boolean(exportMenu)}
+        >
           <Icon name="export" />
-          Export PNG
+          Export
+          <Icon name="chevron" className="export-chevron" />
         </button>
+        {exportMenu && (
+          <ActionMenu
+            x={exportMenu.x}
+            y={exportMenu.y}
+            onClose={() => setExportMenu(null)}
+            items={[
+              {
+                id: 'export-selected',
+                label: `Download selected · ${exportFormat(selectedExportCount)}`,
+                onSelect: onExportSelected,
+              },
+              {
+                id: 'export-all',
+                label: `Download all · ${exportFormat(totalExportCount)}`,
+                onSelect: onExportAll,
+              },
+            ]}
+          />
+        )}
       </div>
     </header>
   )

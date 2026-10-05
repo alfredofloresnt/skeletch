@@ -47,6 +47,7 @@ export default function ActionMenu({ x, y, items, onClose }: ActionMenuProps) {
       className="action-menu"
       style={{ left: x, top: y }}
       role="menu"
+      onPointerDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >
       {items.map((item) => (

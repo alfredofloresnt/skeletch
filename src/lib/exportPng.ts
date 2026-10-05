@@ -3,6 +3,7 @@ import { drawImageCover, loadHtmlImage } from './fillImage'
 import { canvasPaintStyle, isVisiblePaint, toSolidCssColor } from './paint'
 import { pathVerticesToD } from './pathGeometry'
 import type { Artboard, WireElement } from './types'
+import { createZip, type ZipEntry } from './zip'
 
 type ImageCache = Map<string, HTMLImageElement>
 
@@ -346,10 +347,10 @@ function paintShape(ctx: CanvasRenderingContext2D, el: WireElement, images: Imag
   ctx.restore()
 }
 
-export async function exportArtboardPng(
+async function renderArtboard(
   artboard: Artboard,
   elements: WireElement[],
-): Promise<void> {
+): Promise<HTMLCanvasElement> {
   if (document.fonts?.ready) await document.fonts.ready
 
   const canvas = document.createElement('canvas')
@@ -374,13 +375,59 @@ export async function exportArtboardPng(
 
   const sorted = [...elements].sort((a, b) => a.z - b.z)
   for (const el of sorted) paintShape(ctx, el, images)
+  return canvas
+}
 
+function artboardSlug(artboard: Artboard): string {
   const slug = (artboard.name || 'artboard')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
+  return slug || 'artboard'
+}
+
+function artboardFileName(artboard: Artboard): string {
+  return `skeletch-${artboardSlug(artboard)}-${artboard.width}x${artboard.height}.png`
+}
+
+function download(href: string, fileName: string): void {
   const link = document.createElement('a')
-  link.download = `skeletch-${slug || 'artboard'}-${artboard.width}x${artboard.height}.png`
-  link.href = canvas.toDataURL('image/png')
+  link.download = fileName
+  link.href = href
   link.click()
+}
+
+export async function exportArtboardPng(
+  artboard: Artboard,
+  elements: WireElement[],
+): Promise<void> {
+  const canvas = await renderArtboard(artboard, elements)
+  download(canvas.toDataURL('image/png'), artboardFileName(artboard))
+}
+
+/** Render each artboard to PNG and download them together as one .zip. */
+export async function exportArtboardsZip(
+  artboards: Artboard[],
+  elements: WireElement[],
+): Promise<void> {
+  const entries: ZipEntry[] = []
+  const used = new Set<string>()
+  for (const artboard of artboards) {
+    const canvas = await renderArtboard(
+      artboard,
+      elements.filter((el) => el.artboardId === artboard.id),
+    )
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    if (!blob) throw new Error(`Could not render ${artboard.name || 'artboard'}`)
+
+    const base = artboardFileName(artboard).replace(/\.png$/, '')
+    let name = `${base}.png`
+    for (let n = 2; used.has(name); n++) name = `${base}-${n}.png`
+    used.add(name)
+    entries.push({ name, data: new Uint8Array(await blob.arrayBuffer()) })
+  }
+
+  const url = URL.createObjectURL(createZip(entries))
+  download(url, `skeletch-artboards-${entries.length}.zip`)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
