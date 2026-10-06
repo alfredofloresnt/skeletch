@@ -41,6 +41,7 @@ import {
   cornerRadiusFromPointer,
   elementCenter,
   getBounds,
+  isOnGrid,
   normalizeRect,
   pointInElement,
   rectsIntersect,
@@ -80,6 +81,13 @@ const PEN_CLOSE_SCREEN_PX = 10
 const PEN_HANDLE_DRAG_PX = 4
 /** Screen px the pointer must travel before a press on an element becomes a drag. */
 const MOVE_DRAG_PX = 3
+
+/** Backdrop grid cell in screen px: a multiple of the snap grid, coarsened so it never gets dense. */
+function stageGridCell(zoom: number): number {
+  let cell = GRID_SIZE * 4 * zoom
+  while (cell < 16) cell *= 2
+  return cell
+}
 
 type DrawPreview = {
   artboardId: string
@@ -1145,6 +1153,8 @@ export default function Canvas({
       // Lines may flip vertically (negative height); their width stays clamped.
       minH: opts.isLine ? -Infinity : MIN_SIZE,
       aspect: opts.aspect,
+      // With the grid on, edges only align where they still land on a grid line.
+      onGrid: snapOn ? (axis, pos) => isOnGrid(pos - ab[axis]) : undefined,
     })
     showGuides(alignGuides(snapped, targets))
     return { ...snapped, x: snapped.x - ab.x, y: snapped.y - ab.y }
@@ -1185,7 +1195,13 @@ export default function Canvas({
     if (!align) return { point, guides: [] }
     const targets = [...boardAlignTargets(ab), ...pointTargets(anchors, ab)]
     const worldPoint = { x: local.x + ab.x, y: local.y + ab.y }
-    const offset = findPointAlignOffset(worldPoint, targets, ALIGN_SNAP_PX / zoom)
+    // With the grid on, only alignments that keep the point on a grid line count.
+    const offset = findPointAlignOffset(
+      worldPoint,
+      targets,
+      ALIGN_SNAP_PX / zoom,
+      snapOn ? (axis, d) => isOnGrid(Math.round(local[axis] + d)) : undefined,
+    )
     // Alignment beats the grid on each axis it finds a match.
     if (offset.x !== null) point.x = local.x + offset.x
     if (offset.y !== null) point.y = local.y + offset.y
@@ -1327,7 +1343,14 @@ export default function Canvas({
         }
         const targets = ix.alignTargets.rects
         const rawBox = { ...ix.box, x: ix.box.x + rawDx, y: ix.box.y + rawDy }
-        const offset = findAlignOffset(rawBox, targets, ALIGN_SNAP_PX / zoom)
+        const raw = { x: rawDx, y: rawDy }
+        // With the grid on, only alignments that keep the lead element on a grid line count.
+        const accept =
+          snapOn && firstOrigin
+            ? (axis: 'x' | 'y', d: number) =>
+                isOnGrid(firstOrigin.world[axis] + Math.round(raw[axis] + d) - targetBoard[axis])
+            : undefined
+        const offset = findAlignOffset(rawBox, targets, ALIGN_SNAP_PX / zoom, accept)
         // Alignment beats the grid on each axis it finds a match.
         if (offset.x !== null) dx = Math.round(rawDx + offset.x)
         if (offset.y !== null) dy = Math.round(rawDy + offset.y)
@@ -1642,7 +1665,15 @@ export default function Canvas({
       className={`canvas-stage${svgDragOver ? ' is-svg-drag-over' : ''}${
         cursorLocked ? ' is-cursor-locked' : ''
       }`}
-      style={{ cursor }}
+      style={
+        {
+          cursor,
+          // The backdrop grid follows pan and zoom so it lines up with world positions.
+          '--stage-grid-size': `${stageGridCell(zoom)}px`,
+          '--stage-grid-x': `${Math.round(pan.x)}px`,
+          '--stage-grid-y': `${Math.round(pan.y)}px`,
+        } as CSSProperties
+      }
       onPointerDown={onStagePointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

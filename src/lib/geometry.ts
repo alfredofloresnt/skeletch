@@ -11,6 +11,11 @@ export function snap(value: number, enabled: boolean, grid = GRID_SIZE): number 
   return Math.round(value / grid) * grid
 }
 
+/** Whether `value` sits on a grid line (within float noise). */
+export function isOnGrid(value: number, grid = GRID_SIZE): boolean {
+  return Math.abs(value - Math.round(value / grid) * grid) < 1e-6
+}
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }

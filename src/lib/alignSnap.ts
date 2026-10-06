@@ -49,13 +49,22 @@ export function alignTargets(
 const xLines = (r: Rect) => [r.x, r.x + r.w / 2, r.x + r.w]
 const yLines = (r: Rect) => [r.y, r.y + r.h / 2, r.y + r.h]
 
-/** Smallest offset (within `threshold`) that puts one of `lines` on a target line. */
-function nearestOffset(lines: number[], targetLines: number[], threshold: number): number | null {
+/** Decides whether an alignment offset on `axis` is allowed (e.g. it keeps the grid). */
+export type AcceptOffset = (axis: 'x' | 'y', d: number) => boolean
+
+/** Smallest accepted offset (within `threshold`) that puts one of `lines` on a target line. */
+function nearestOffset(
+  lines: number[],
+  targetLines: number[],
+  threshold: number,
+  accept: (d: number) => boolean = () => true,
+): number | null {
   let best: number | null = null
   for (const m of lines) {
     for (const t of targetLines) {
       const d = t - m
-      if (Math.abs(d) <= threshold && (best === null || Math.abs(d) < Math.abs(best))) best = d
+      if (Math.abs(d) > threshold || (best !== null && Math.abs(d) >= Math.abs(best))) continue
+      if (accept(d)) best = d
     }
   }
   return best
@@ -66,10 +75,11 @@ export function findAlignOffset(
   box: Rect,
   targets: Rect[],
   threshold: number,
+  accept?: AcceptOffset,
 ): { x: number | null; y: number | null } {
   return {
-    x: nearestOffset(xLines(box), targets.flatMap(xLines), threshold),
-    y: nearestOffset(yLines(box), targets.flatMap(yLines), threshold),
+    x: nearestOffset(xLines(box), targets.flatMap(xLines), threshold, accept && ((d) => accept('x', d))),
+    y: nearestOffset(yLines(box), targets.flatMap(yLines), threshold, accept && ((d) => accept('y', d))),
   }
 }
 
@@ -77,24 +87,37 @@ export function findAlignOffset(
  * Snap the edges a resize handle drags onto nearby target lines. The opposite edges
  * stay put; an edge snap that would shrink the box below the minimum is skipped.
  * With `aspect`, only the edge that drives the resize snaps and the other side follows.
+ * `onGrid` limits snapping to target lines where the dragged edge stays on the layout grid.
  */
 export function snapResizeEdges(
   box: Rect,
   handle: ResizeHandle,
   targets: Rect[],
   threshold: number,
-  { minW, minH, aspect }: { minW: number; minH: number; aspect?: number },
+  {
+    minW,
+    minH,
+    aspect,
+    onGrid,
+  }: {
+    minW: number
+    minH: number
+    aspect?: number
+    onGrid?: (axis: 'x' | 'y', pos: number) => boolean
+  },
 ): Rect {
   let { x, y, w, h } = box
+  const edgeAt = (axis: 'x' | 'y', edge: number) =>
+    onGrid && ((d: number) => onGrid(axis, Math.round(edge + d)))
   const tx = targets.flatMap(xLines)
   const ty = targets.flatMap(yLines)
   const widthDrives = handle.includes('e') || handle.includes('w')
   if (!aspect || widthDrives) {
     if (handle.includes('e')) {
-      const d = nearestOffset([x + w], tx, threshold)
+      const d = nearestOffset([x + w], tx, threshold, edgeAt('x', x + w))
       if (d !== null && w + d >= minW) w = Math.round(x + w + d) - x
     } else if (handle.includes('w')) {
-      const d = nearestOffset([x], tx, threshold)
+      const d = nearestOffset([x], tx, threshold, edgeAt('x', x))
       if (d !== null && w - d >= minW) {
         const right = x + w
         x = Math.round(x + d)
@@ -104,10 +127,10 @@ export function snapResizeEdges(
   }
   if (!aspect || !widthDrives) {
     if (handle.includes('s')) {
-      const d = nearestOffset([y + h], ty, threshold)
+      const d = nearestOffset([y + h], ty, threshold, edgeAt('y', y + h))
       if (d !== null && h + d >= minH) h = Math.round(y + h + d) - y
     } else if (handle.includes('n')) {
-      const d = nearestOffset([y], ty, threshold)
+      const d = nearestOffset([y], ty, threshold, edgeAt('y', y))
       if (d !== null && h - d >= minH) {
         const bottom = y + h
         y = Math.round(y + d)
@@ -130,8 +153,9 @@ export function findPointAlignOffset(
   point: Point,
   targets: Rect[],
   threshold: number,
+  accept?: AcceptOffset,
 ): { x: number | null; y: number | null } {
-  return findAlignOffset({ x: point.x, y: point.y, w: 0, h: 0 }, targets, threshold)
+  return findAlignOffset({ x: point.x, y: point.y, w: 0, h: 0 }, targets, threshold, accept)
 }
 
 /** Zero-size boxes so points (e.g. pen anchors) act as alignment targets. */
