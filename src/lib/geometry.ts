@@ -53,7 +53,7 @@ export function getBounds(elements: BoxLike[]): Rect | null {
   let maxX = -Infinity
   let maxY = -Infinity
   for (const el of elements) {
-    const { x, y, w, h } = lineAwareBox(el)
+    const { x, y, w, h } = visualBox(el)
     minX = Math.min(minX, x)
     minY = Math.min(minY, y)
     maxX = Math.max(maxX, x + w)
@@ -62,7 +62,13 @@ export function getBounds(elements: BoxLike[]): Rect | null {
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
 }
 
-/** Bounding box used for hit-testing / selection (lines use stroke padding). */
+/** Box the element is drawn in: lines span exactly from one endpoint to the other. */
+export function visualBox(el: BoxLike): Rect {
+  if (el.type !== 'line') return { x: el.x, y: el.y, w: el.w, h: el.h }
+  return normalizeRect(el.x, el.y, el.w, el.h)
+}
+
+/** Bounding box used for hit-testing (lines get stroke padding so they're easy to grab). */
 export function lineAwareBox(el: BoxLike): Rect {
   if (el.type !== 'line') {
     return { x: el.x, y: el.y, w: el.w, h: el.h }
@@ -301,7 +307,7 @@ export function boundsCenter(bounds: Rect): Point {
 
 /** Axis-aligned bounds of a possibly rotated element (artboard-local). */
 export function rotatedAabb(el: Pick<WireElement, 'type' | 'x' | 'y' | 'w' | 'h' | 'rotation' | 'strokeWidth'>): Rect {
-  const box = lineAwareBox(el)
+  const box = visualBox(el)
   const rot = el.rotation || 0
   if (!rot) return box
   const c = { x: box.x + box.w / 2, y: box.y + box.h / 2 }

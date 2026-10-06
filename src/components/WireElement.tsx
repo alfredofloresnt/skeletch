@@ -447,7 +447,7 @@ function WireElement({
         <svg className="el-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
           <SvgPaintDefs idPrefix={el.id} fill={el.fill} stroke={el.stroke} />
           <polygon
-            points="50,3 97,97 3,97"
+            points="50,0 100,100 0,100"
             fill={el.fillImage ? 'none' : svgPaintAttr(el.fill, `${el.id}-fill`)}
             stroke={hasStroke ? svgPaintAttr(el.stroke, `${el.id}-stroke`) : 'none'}
             strokeWidth={sw}
