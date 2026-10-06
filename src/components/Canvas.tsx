@@ -1,6 +1,8 @@
 import {
+  memo,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -87,6 +89,54 @@ function stageGridCell(zoom: number): number {
   let cell = GRID_SIZE * 4 * zoom
   while (cell < 16) cell *= 2
   return cell
+}
+
+/** Path data for grid lines every `step` from `x0`/`y0` across a `w`×`h` area. */
+function gridPath(w: number, h: number, step: number, x0 = step, y0 = step): string {
+  let d = ''
+  for (let x = x0; x < w; x += step) d += `M${x} 0V${h}`
+  for (let y = y0; y < h; y += step) d += `M0 ${y}H${w}`
+  return d
+}
+
+/**
+ * Snap grid drawn as vector lines in artboard space, so each line lands exactly where elements
+ * snap. A repeating CSS gradient drifts in Safari: it rounds every scaled tile to device pixels.
+ */
+const ArtboardGrid = memo(function ArtboardGrid({ width, height }: { width: number; height: number }) {
+  const d = useMemo(() => gridPath(width, height, GRID_SIZE), [width, height])
+  return (
+    <svg className="artboard-grid" width={width} height={height} aria-hidden>
+      <path d={d} />
+    </svg>
+  )
+})
+
+/** Backdrop grid in screen space, offset by the pan so it stays locked to world positions. */
+function StageGrid({ pan, zoom }: { pan: Point; zoom: number }) {
+  const ref = useRef<SVGSVGElement>(null)
+  const [size, setSize] = useState({ w: 0, h: 0 })
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      setSize({ w: Math.ceil(width), h: Math.ceil(height) })
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+  const cell = stageGridCell(zoom)
+  // Same whole-pixel pan as the world transform.
+  const ox = Math.round(pan.x)
+  const oy = Math.round(pan.y)
+  const startX = ox - Math.floor(ox / cell) * cell
+  const startY = oy - Math.floor(oy / cell) * cell
+  return (
+    <svg ref={ref} className="stage-grid" aria-hidden>
+      <path d={gridPath(size.w, size.h, cell, startX, startY)} />
+    </svg>
+  )
 }
 
 type DrawPreview = {
@@ -1665,15 +1715,7 @@ export default function Canvas({
       className={`canvas-stage${svgDragOver ? ' is-svg-drag-over' : ''}${
         cursorLocked ? ' is-cursor-locked' : ''
       }`}
-      style={
-        {
-          cursor,
-          // The backdrop grid follows pan and zoom so it lines up with world positions.
-          '--stage-grid-size': `${stageGridCell(zoom)}px`,
-          '--stage-grid-x': `${Math.round(pan.x)}px`,
-          '--stage-grid-y': `${Math.round(pan.y)}px`,
-        } as CSSProperties
-      }
+      style={{ cursor }}
       onPointerDown={onStagePointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -1703,6 +1745,7 @@ export default function Canvas({
         openActions(e, ids)
       }}
     >
+      <StageGrid pan={pan} zoom={zoom} />
       <div
         ref={worldRef}
         className="canvas-world"
@@ -1743,13 +1786,9 @@ export default function Canvas({
                 style={{
                   width: ab.width,
                   height: ab.height,
-                  backgroundImage: snapOn
-                    ? `linear-gradient(to right, rgba(0,0,0,0.06) var(--hairline), transparent var(--hairline)),
-                       linear-gradient(to bottom, rgba(0,0,0,0.06) var(--hairline), transparent var(--hairline))`
-                    : 'none',
-                  backgroundSize: snapOn ? `${GRID_SIZE}px ${GRID_SIZE}px` : undefined,
                 }}
               >
+                {snapOn && <ArtboardGrid width={ab.width} height={ab.height} />}
                 {sortByZ(boardEls).map((el) => {
                   const dimmed = Boolean(
                     editingGroupId && isActive && el.groupId !== editingGroupId,

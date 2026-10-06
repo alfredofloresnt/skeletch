@@ -1212,11 +1212,32 @@ textarea {
   overflow: hidden;
   touch-action: none;
   user-select: none;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: var(--stage-grid-size, 32px) var(--stage-grid-size, 32px);
-  background-position: var(--stage-grid-x, 0) var(--stage-grid-y, 0);
+}
+
+.stage-grid,
+.artboard-grid {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.stage-grid {
+  width: 100%;
+  height: 100%;
+}
+
+.stage-grid path {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.02);
+  stroke-width: 1px;
+}
+
+.artboard-grid path {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0.06);
+  /* One screen pixel at any zoom, centered on the line like element strokes. */
+  stroke-width: var(--hairline);
 }
 
 .canvas-stage.is-svg-drag-over {
