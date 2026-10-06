@@ -1521,6 +1521,23 @@ textarea {
   z-index: 10000;
 }
 
+.snap-guide {
+  position: absolute;
+  background: var(--select);
+  pointer-events: none;
+  z-index: 10001;
+}
+
+.snap-guide--x {
+  width: var(--hairline);
+  margin-left: calc(var(--hairline) / -2);
+}
+
+.snap-guide--y {
+  height: var(--hairline);
+  margin-top: calc(var(--hairline) / -2);
+}
+
 .draw-preview {
   position: absolute;
   pointer-events: none;

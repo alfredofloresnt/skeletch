@@ -15,7 +15,18 @@ import {
   pointInArtboard,
   worldToLocal,
 } from '../lib/artboards'
-import { GRID_SIZE, MAX_ZOOM, MIN_ZOOM } from '../lib/constants'
+import {
+  ALIGN_SNAP_PX,
+  alignBox,
+  alignGuides,
+  alignTargets,
+  findAlignOffset,
+  findPointAlignOffset,
+  pointTargets,
+  snapResizeEdges,
+  type SnapGuide,
+} from '../lib/alignSnap'
+import { GRID_SIZE, MAX_ZOOM, MIN_SIZE, MIN_ZOOM } from '../lib/constants'
 import {
   canGroup,
   drawnShapeBox,
@@ -291,6 +302,10 @@ type Interaction =
       startClient: Point
       origins: Record<string, ElementOrigin>
       ids: string[]
+      /** World-space box of the moving elements at their origins, for alignment snapping. */
+      box: Rect | null
+      /** Alignment targets cached per artboard the selection hovers. */
+      alignTargets?: { artboardId: string; rects: Rect[] }
       /** Past the drag threshold; until then the press is treated as a click. */
       moved?: boolean
       /** Selection to narrow to if the press ends without dragging. */
@@ -304,6 +319,7 @@ type Interaction =
       origin: WireElementModel
       id: string
       keepAspect: boolean
+      alignTargets?: Rect[]
       historyRecorded?: boolean
     }
   | {
@@ -314,6 +330,7 @@ type Interaction =
       origins: WireElementModel[]
       artboardId: string
       keepAspect: boolean
+      alignTargets?: Rect[]
       historyRecorded?: boolean
     }
   | {
@@ -465,6 +482,10 @@ export default function Canvas({
   const [svgDragOver, setSvgDragOver] = useState(false)
   const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null)
   const [draggingElements, setDraggingElements] = useState(false)
+  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([])
+  // Skip the re-render when nothing is shown and nothing will be (e.g. hovering with the pen).
+  const showGuides = (next: SnapGuide[]) =>
+    setSnapGuides((prev) => (!prev.length && !next.length ? prev : next))
   const interaction = useRef<Interaction | null>(null)
   const lastClick = useRef<{ id: string | null; time: number }>({ id: null, time: 0 })
   const lastEmptyClick = useRef(0)
@@ -475,6 +496,11 @@ export default function Canvas({
   const pinchActiveRef = useRef(false)
   const pinchIdleTimer = useRef(0)
   const worldRef = useRef<HTMLDivElement>(null)
+
+  const penDrafting = Boolean(penDraft)
+  useEffect(() => {
+    setSnapGuides([])
+  }, [placeTool, penDrafting])
 
   useEffect(() => {
     if (pinchActiveRef.current) return
@@ -745,14 +771,17 @@ export default function Canvas({
 
         const draft = penDraftRef.current
         const closeThreshold = PEN_CLOSE_SCREEN_PX / zoom
+        const sameBoardDraft = draft && draft.artboardId === target.board.id ? draft : null
         let point = { ...target.local }
-        if (e.shiftKey && draft?.vertices.length) {
-          const prev = draft.vertices[draft.vertices.length - 1]
+        const constrain = Boolean(e.shiftKey && sameBoardDraft?.vertices.length)
+        if (constrain && sameBoardDraft) {
+          const prev = sameBoardDraft.vertices[sameBoardDraft.vertices.length - 1]
           point = snapPointTo45(prev, point)
         }
-        if (snapOn) {
-          point = { x: snap(point.x, true), y: snap(point.y, true) }
-        }
+        point = snapDrawPoint(target.board, point, e, {
+          anchors: sameBoardDraft?.vertices,
+          align: !constrain,
+        }).point
 
         // Double-click empty finishes an open path
         const now = Date.now()
@@ -817,19 +846,20 @@ export default function Canvas({
         onArtboardSelected(false)
         onSelect([])
         onEditGroup(null)
+        const start = snapDrawPoint(target.board, target.local, e).point
         interaction.current = {
           mode: 'draw',
           tool: placeTool,
           artboardId: target.board.id,
-          startLocal: { ...target.local },
+          startLocal: start,
           startClient: { x: e.clientX, y: e.clientY },
           shiftKey: e.shiftKey,
         }
         setDrawPreview({
           artboardId: target.board.id,
           tool: placeTool,
-          x: target.local.x,
-          y: target.local.y,
+          x: start.x,
+          y: start.y,
           w: 0,
           h: 0,
         })
@@ -988,10 +1018,13 @@ export default function Canvas({
     const world = screenToWorld(e.clientX, e.clientY, rect, pan, zoom)
     const origins: Record<string, ElementOrigin> = {}
     const moving = new Set(movingIds)
+    const boxes: Rect[] = []
     for (const item of elements) {
       if (!moving.has(item.id) || item.locked) continue
       const ab = boardMap.get(item.artboardId)
       if (!ab) continue
+      const box = alignBox(item)
+      boxes.push({ ...box, x: box.x + ab.x, y: box.y + ab.y })
       origins[item.id] = {
         x: item.x,
         y: item.y,
@@ -1008,6 +1041,7 @@ export default function Canvas({
       startClient: { x: e.clientX, y: e.clientY },
       origins,
       ids: movingIds.filter((id) => origins[id]),
+      box: boxes.length ? unionRects(boxes) : null,
       collapseTo,
     }
     stageRef.current?.setPointerCapture(e.pointerId)
@@ -1097,21 +1131,90 @@ export default function Canvas({
     stageRef.current?.setPointerCapture(e.pointerId)
   }
 
+  /** Snap a resized artboard-local box's dragged edges to alignment targets and show guides. */
+  const resizeWithAlignment = (
+    box: Rect,
+    ab: Artboard,
+    handle: ResizeHandle,
+    targets: Rect[],
+    opts: { aspect?: number; isLine?: boolean },
+  ): Rect => {
+    const worldBox = { ...box, x: box.x + ab.x, y: box.y + ab.y }
+    const snapped = snapResizeEdges(worldBox, handle, targets, ALIGN_SNAP_PX / zoom, {
+      minW: MIN_SIZE,
+      // Lines may flip vertically (negative height); their width stays clamped.
+      minH: opts.isLine ? -Infinity : MIN_SIZE,
+      aspect: opts.aspect,
+    })
+    showGuides(alignGuides(snapped, targets))
+    return { ...snapped, x: snapped.x - ab.x, y: snapped.y - ab.y }
+  }
+
+  /** Board elements as alignment targets, cached until the elements change. */
+  const boardTargetsCache = useRef<{
+    elements: WireElementModel[]
+    byBoard: Map<string, Rect[]>
+  } | null>(null)
+  const boardAlignTargets = (ab: Artboard): Rect[] => {
+    let cache = boardTargetsCache.current
+    if (!cache || cache.elements !== elements) {
+      cache = { elements, byBoard: new Map() }
+      boardTargetsCache.current = cache
+    }
+    let rects = cache.byBoard.get(ab.id)
+    if (!rects) {
+      rects = alignTargets(ab, elements, new Set())
+      cache.byBoard.set(ab.id, rects)
+    }
+    return rects
+  }
+
+  /**
+   * Snap a point being drawn (artboard-local) to the grid and to alignment lines of the
+   * board's elements plus `anchors` (e.g. earlier pen anchors). Ctrl skips all snapping;
+   * `align: false` keeps only the grid (used while Shift constrains the angle).
+   */
+  const snapDrawPoint = (
+    ab: Artboard,
+    local: Point,
+    e: { ctrlKey: boolean },
+    { anchors = [], align = true }: { anchors?: Point[]; align?: boolean } = {},
+  ): { point: Point; guides: SnapGuide[] } => {
+    if (e.ctrlKey) return { point: local, guides: [] }
+    const point = { x: snap(local.x, snapOn), y: snap(local.y, snapOn) }
+    if (!align) return { point, guides: [] }
+    const targets = [...boardAlignTargets(ab), ...pointTargets(anchors, ab)]
+    const worldPoint = { x: local.x + ab.x, y: local.y + ab.y }
+    const offset = findPointAlignOffset(worldPoint, targets, ALIGN_SNAP_PX / zoom)
+    // Alignment beats the grid on each axis it finds a match.
+    if (offset.x !== null) point.x = local.x + offset.x
+    if (offset.y !== null) point.y = local.y + offset.y
+    const guides = alignGuides({ x: point.x + ab.x, y: point.y + ab.y, w: 0, h: 0 }, targets)
+    return { point, guides }
+  }
+
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const ix = interaction.current
     const rect = getStageRect()
     const world = screenToWorld(e.clientX, e.clientY, rect, pan, zoom)
 
-    // Rubber-band cursor while pen drafting (no active pointer capture)
-    if (!ix && isPathTool(placeTool) && penDraftRef.current) {
-      const draft = penDraftRef.current
-      const ab = boardMap.get(draft.artboardId)
+    // Hovering with the pen or a shape tool: preview where the next point will snap,
+    // and rubber-band the pen cursor while drafting (no active pointer capture).
+    if (!ix && (isPathTool(placeTool) || isDrawTool(placeTool))) {
+      const draft = isPathTool(placeTool) ? penDraftRef.current : null
+      const ab = draft ? boardMap.get(draft.artboardId) : resolvePlaceTarget(world)?.board
       if (!ab) return
       let local = worldToLocal(ab, world)
-      if (e.shiftKey && draft.vertices.length) {
+      const constrain = Boolean(e.shiftKey && draft?.vertices.length)
+      if (constrain && draft) {
         local = snapPointTo45(draft.vertices[draft.vertices.length - 1], local)
       }
-      onPenDraftChange({ ...draft, cursor: local })
+      const snapped = snapDrawPoint(ab, local, e, {
+        anchors: draft?.vertices,
+        align: !constrain,
+      })
+      showGuides(snapped.guides)
+      if (draft) onPenDraftChange({ ...draft, cursor: snapped.point })
       return
     }
 
@@ -1164,8 +1267,12 @@ export default function Canvas({
         setDraggingElements(true)
       }
       recordEdit()
-      let dx = world.x - ix.startWorld.x
-      let dy = world.y - ix.startWorld.y
+      // Ctrl bypasses grid and alignment snapping (positions still land on whole pixels).
+      const snapping = !e.ctrlKey
+      const rawDx = world.x - ix.startWorld.x
+      const rawDy = world.y - ix.startWorld.y
+      let dx = rawDx
+      let dy = rawDy
 
       const firstId = ix.ids[0]
       const firstOrigin = firstId ? ix.origins[firstId] : null
@@ -1176,8 +1283,8 @@ export default function Canvas({
           boardMap.get(firstOrigin.artboardId)
         if (target) {
           const local = worldToLocal(target, tentative)
-          const sx = snap(local.x, snapOn)
-          const sy = snap(local.y, snapOn)
+          const sx = snap(local.x, snapOn && snapping)
+          const sy = snap(local.y, snapOn && snapping)
           const snappedWorld = localToWorld(target, { x: sx, y: sy })
           dx = snappedWorld.x - firstOrigin.world.x
           dy = snappedWorld.y - firstOrigin.world.y
@@ -1210,6 +1317,24 @@ export default function Canvas({
 
       if (!targetBoard) return
 
+      let guides: SnapGuide[] = []
+      if (snapping && ix.box) {
+        if (ix.alignTargets?.artboardId !== targetBoard.id) {
+          ix.alignTargets = {
+            artboardId: targetBoard.id,
+            rects: alignTargets(targetBoard, elements, new Set(ix.ids)),
+          }
+        }
+        const targets = ix.alignTargets.rects
+        const rawBox = { ...ix.box, x: ix.box.x + rawDx, y: ix.box.y + rawDy }
+        const offset = findAlignOffset(rawBox, targets, ALIGN_SNAP_PX / zoom)
+        // Alignment beats the grid on each axis it finds a match.
+        if (offset.x !== null) dx = Math.round(rawDx + offset.x)
+        if (offset.y !== null) dy = Math.round(rawDy + offset.y)
+        guides = alignGuides({ ...ix.box, x: ix.box.x + dx, y: ix.box.y + dy }, targets)
+      }
+      showGuides(guides)
+
       const updates = ix.ids.map((id) => {
         const o = ix.origins[id]
         const worldPos = { x: o.world.x + dx, y: o.world.y + dy }
@@ -1237,10 +1362,24 @@ export default function Canvas({
         dx = nowLocal.x - startLocal.x
         dy = nowLocal.y - startLocal.y
       }
-      const next = applyResize(ix.origin, ix.handle, dx, dy, {
-        snapOn,
-        keepAspect: e.shiftKey || ix.keepAspect,
+      const keepAspect = e.shiftKey || ix.keepAspect
+      const snapping = !e.ctrlKey
+      let next = applyResize(ix.origin, ix.handle, dx, dy, {
+        snapOn: snapOn && snapping,
+        keepAspect,
       })
+      // Rotated boxes resize in their own frame, so their edges can't line up with others.
+      if (snapping && ab && !(ix.origin.rotation || 0)) {
+        const isLine = ix.origin.type === 'line'
+        ix.alignTargets ??= alignTargets(ab, elements, new Set([ix.id]))
+        next = resizeWithAlignment(next, ab, ix.handle, ix.alignTargets, {
+          // Mirrors applyResize: lines never keep aspect.
+          aspect: keepAspect && !isLine ? ix.origin.w / Math.max(ix.origin.h, 1) : undefined,
+          isLine,
+        })
+      } else {
+        showGuides([])
+      }
       onResizeElement(ix.id, next)
       return
     }
@@ -1279,10 +1418,21 @@ export default function Canvas({
         w: ix.originBounds.w,
         h: ix.originBounds.h,
       }
-      const next = applyResize(proxy, ix.handle, dx, dy, {
-        snapOn,
-        keepAspect: e.shiftKey || ix.keepAspect,
+      const keepAspect = e.shiftKey || ix.keepAspect
+      const snapping = !e.ctrlKey
+      let next = applyResize(proxy, ix.handle, dx, dy, {
+        snapOn: snapOn && snapping,
+        keepAspect,
       })
+      const ab = boardMap.get(ix.artboardId)
+      if (snapping && ab) {
+        ix.alignTargets ??= alignTargets(ab, elements, new Set(ix.origins.map((el) => el.id)))
+        next = resizeWithAlignment(next, ab, ix.handle, ix.alignTargets, {
+          aspect: keepAspect ? ix.originBounds.w / Math.max(ix.originBounds.h, 1) : undefined,
+        })
+      } else {
+        showGuides([])
+      }
       onResizeGroup(ix.origins, ix.originBounds, next)
       return
     }
@@ -1305,10 +1455,12 @@ export default function Canvas({
       ix.shiftKey = e.shiftKey
       const ab = boardMap.get(ix.artboardId)
       if (!ab) return
-      const local = worldToLocal(ab, world)
-      const box = drawnShapeBox(ix.tool, ix.startLocal, local, {
+      // Shift constrains the shape, so the free corner can't also chase alignment lines.
+      const end = snapDrawPoint(ab, worldToLocal(ab, world), e, { align: !e.shiftKey })
+      showGuides(end.guides)
+      // Both corners are already snapped; drawnShapeBox only rounds to whole pixels.
+      const box = drawnShapeBox(ix.tool, ix.startLocal, end.point, {
         shiftKey: e.shiftKey,
-        snapOn,
       })
       setDrawPreview({
         artboardId: ix.artboardId,
@@ -1334,6 +1486,7 @@ export default function Canvas({
       const v = verts[ix.vertexIndex]
       if (!v) return
       if (dragged) {
+        showGuides([])
         if (e.shiftKey && ix.vertexIndex > 0) {
           local = snapPointTo45(verts[ix.vertexIndex - 1], local)
         }
@@ -1352,6 +1505,7 @@ export default function Canvas({
 
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     const ix = interaction.current
+    showGuides([])
     if (ix?.mode === 'pen-handle') {
       const draft = penDraftRef.current
       if (draft) {
@@ -1373,14 +1527,13 @@ export default function Canvas({
       const dragged = dx * dx + dy * dy >= 16
       if (ab) {
         if (dragged) {
+          const shiftKey = e.shiftKey || ix.shiftKey
           const local = worldToLocal(
             ab,
             screenToWorld(e.clientX, e.clientY, getStageRect(), pan, zoom),
           )
-          const box = drawnShapeBox(ix.tool, ix.startLocal, local, {
-            shiftKey: e.shiftKey || ix.shiftKey,
-            snapOn,
-          })
+          const end = snapDrawPoint(ab, local, e, { align: !shiftKey }).point
+          const box = drawnShapeBox(ix.tool, ix.startLocal, end, { shiftKey })
           onPlace(ix.tool, box.x, box.y, ix.artboardId, { w: box.w, h: box.h })
         } else {
           onPlace(ix.tool, ix.startLocal.x, ix.startLocal.y, ix.artboardId)
@@ -1494,6 +1647,9 @@ export default function Canvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onPointerLeave={() => {
+        if (!interaction.current) showGuides([])
+      }}
       onDragOver={onSvgDragOver}
       onDragLeave={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setSvgDragOver(false)
@@ -1679,6 +1835,17 @@ export default function Canvas({
             }}
           />
         )}
+        {snapGuides.map((g, i) => (
+          <div
+            key={i}
+            className={`snap-guide snap-guide--${g.axis}`}
+            style={
+              g.axis === 'x'
+                ? { left: g.pos, top: g.from, height: g.to - g.from }
+                : { top: g.pos, left: g.from, width: g.to - g.from }
+            }
+          />
+        ))}
       </div>
       <div className="canvas-hint">
         {editingTextId
@@ -1693,7 +1860,7 @@ export default function Canvas({
                   ? 'Path · Click to place anchors · Drag for curves · Esc for Select'
                   : isDrawTool(placeTool)
                     ? 'Click-drag to draw · Shift constrains · Esc for Select'
-                    : 'Select · Drag to move or marquee · Shift-click to add · Space-drag to pan · Esc clears selection'}
+                    : 'Select · Drag to move or marquee · Ctrl-drag skips snapping · Shift-click to add · Space-drag to pan · Esc clears selection'}
       </div>
       {menu && menuItems && (
         <ActionMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />
