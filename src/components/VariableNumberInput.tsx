@@ -15,6 +15,8 @@ type VariableNumberInputProps = {
   min?: number
   max?: number
   label: string
+  /** Selected elements disagree on this value; the field shows "Mixed" until edited. */
+  mixed?: boolean
   onChange: (value: number, variableId: string | null) => void
   onAddVariable: (variable: DesignVariable) => void
 }
@@ -26,6 +28,7 @@ export default function VariableNumberInput({
   min = 0,
   max = 9999,
   label,
+  mixed = false,
   onChange,
   onAddVariable,
 }: VariableNumberInputProps) {
@@ -59,7 +62,8 @@ export default function VariableNumberInput({
         <NumberInput
           min={min}
           max={max}
-          value={bound ? Number(bound.value) : value}
+          value={mixed ? null : bound ? Number(bound.value) : value}
+          placeholder={mixed ? 'Mixed' : undefined}
           onChange={(n) => onChange(n, null)}
           aria-label={label}
         />

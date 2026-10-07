@@ -1623,6 +1623,10 @@ textarea {
   flex-shrink: 0;
 }
 
+.color-picker-swatch.is-mixed {
+  border-style: dashed;
+}
+
 .color-picker-swatch.is-transparent {
   background:
     linear-gradient(45deg, #666 25%, transparent 25%),

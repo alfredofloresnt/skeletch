@@ -82,11 +82,299 @@ function VAlignIcon({ align }: { align: VerticalAlign }) {
   )
 }
 
+/** The value every element shares, or null when the selection disagrees. */
+function sharedValue<T>(items: WireElement[], get: (el: WireElement) => T): T | null {
+  if (!items.length) return null
+  const first = get(items[0])
+  return items.every((el) => get(el) === first) ? first : null
+}
+
+type SectionProps = {
+  selected: WireElement[]
+  set: (patch: Partial<WireElement>) => void
+}
+
+function NameSection({ selected, set }: SectionProps) {
+  const name = sharedValue(selected, (el) => el.name || '')
+  return (
+    <div className="inspector-section">
+      <label className="field-label">Name</label>
+      <input
+        type="text"
+        value={name ?? ''}
+        placeholder={name == null ? 'Mixed' : undefined}
+        onChange={(e) => set({ name: e.target.value })}
+        aria-label="Element name"
+      />
+    </div>
+  )
+}
+
+type PropertySectionsProps = SectionProps & {
+  variables: DesignVariable[]
+  onAddVariable: (variable: DesignVariable) => void
+  onRotateSelection?: (degrees: number) => void
+}
+
+/**
+ * Editable attributes for one or many elements. Only sections every selected
+ * element supports are shown; differing values render as "Mixed" and editing
+ * one writes the new value to the whole selection.
+ */
+function PropertySections({
+  selected,
+  variables,
+  set,
+  onAddVariable,
+  onRotateSelection,
+}: PropertySectionsProps) {
+  const every = (pred: (el: WireElement) => boolean) => selected.every(pred)
+  const isText = every((el) => el.type === 'text')
+  const hasFill = every((el) => el.type !== 'line' && el.type !== 'text')
+  const hasStroke = every((el) => el.type !== 'text')
+  const hasRadius = every((el) => el.type === 'rect' || el.type === 'image')
+
+  const first = selected[0]
+  const x = sharedValue(selected, (el) => Math.round(el.x))
+  const y = sharedValue(selected, (el) => Math.round(el.y))
+  const w = sharedValue(selected, (el) => Math.round(el.w))
+  const h = sharedValue(selected, (el) => Math.round(el.h))
+  const rotation = sharedValue(selected, (el) => Math.round(el.rotation || 0))
+  const fontSize = sharedValue(selected, (el) => el.fontSize || 16)
+  const fontSizeVar = sharedValue(selected, (el) => el.fontSizeVar ?? null)
+  const textAlign = sharedValue(selected, (el) => el.textAlign || 'left')
+  const verticalAlign = sharedValue(selected, (el) => el.verticalAlign || 'top')
+  const fill = sharedValue(selected, (el) => el.fill || 'transparent')
+  const textColor = sharedValue(selected, (el) => el.fill || '#1a1a1a')
+  const fillVar = sharedValue(selected, (el) => el.fillVar ?? null)
+  const anyFillImage = selected.some((el) => el.fillImage)
+  const stroke = sharedValue(selected, (el) => el.stroke || '#1a1a1a')
+  const strokeWidth = sharedValue(selected, (el) => el.strokeWidth ?? 2)
+  const cornerRadius = sharedValue(selected, (el) => el.cornerRadius || 0)
+  const cornerRadiusVar = sharedValue(selected, (el) => el.cornerRadiusVar ?? null)
+  const opacity = sharedValue(selected, (el) => el.opacity ?? 1)
+
+  return (
+    <>
+      <div className="inspector-section">
+        <label className="field-label">Position</label>
+        <div className="field-row">
+          <label>
+            X
+            <NumberInput value={x} placeholder="Mixed" onChange={(n) => set({ x: n })} />
+          </label>
+          <label>
+            Y
+            <NumberInput value={y} placeholder="Mixed" onChange={(n) => set({ y: n })} />
+          </label>
+        </div>
+        <div className="field-row">
+          <label>
+            W
+            <NumberInput
+              min={1}
+              value={w}
+              placeholder="Mixed"
+              onChange={(n) => set({ w: n })}
+            />
+          </label>
+          <label>
+            H
+            <NumberInput
+              min={1}
+              value={h}
+              placeholder="Mixed"
+              onChange={(n) => set({ h: n })}
+            />
+          </label>
+        </div>
+        <label className="field-label" style={{ marginTop: '0.65rem' }}>
+          Rotation
+        </label>
+        <div className="field-row">
+          <label>
+            °
+            <NumberInput
+              step={1}
+              value={rotation}
+              placeholder="Mixed"
+              onChange={(n) => onRotateSelection?.(n)}
+              aria-label="Rotation degrees"
+            />
+          </label>
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => onRotateSelection?.(0)}
+            title="Reset rotation"
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+
+      {isText && (
+        <div className="inspector-section">
+          <label className="field-label">Font size</label>
+          <VariableNumberInput
+            label="Font size"
+            value={fontSize ?? first.fontSize ?? 16}
+            mixed={fontSize == null}
+            variableId={fontSizeVar}
+            variables={variables}
+            min={8}
+            max={200}
+            onChange={(value, variableId) =>
+              set({ fontSize: value, fontSizeVar: variableId })
+            }
+            onAddVariable={onAddVariable}
+          />
+          <label className="field-label">Horizontal</label>
+          <div className="btn-row btn-row--icons">
+            {(
+              [
+                ['left', 'Align left'],
+                ['middle', 'Align center'],
+                ['right', 'Align right'],
+              ] as const
+            ).map(([align, label]) => (
+              <button
+                key={align}
+                type="button"
+                title={label}
+                aria-label={label}
+                className={`btn-ghost btn-icon${textAlign === align ? ' is-active' : ''}`}
+                onClick={() => set({ textAlign: align })}
+              >
+                <AlignIcon align={align} />
+              </button>
+            ))}
+          </div>
+          <label className="field-label">Vertical</label>
+          <div className="btn-row btn-row--icons">
+            {(
+              [
+                ['top', 'Align top'],
+                ['middle', 'Align middle'],
+                ['bottom', 'Align bottom'],
+              ] as const
+            ).map(([align, label]) => (
+              <button
+                key={align}
+                type="button"
+                title={label}
+                aria-label={label}
+                className={`btn-ghost btn-icon${verticalAlign === align ? ' is-active' : ''}`}
+                onClick={() => set({ verticalAlign: align })}
+              >
+                <VAlignIcon align={align} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="inspector-section">
+        <label className="field-label">Appearance</label>
+        {hasFill && (
+          <>
+            <label className="field-label">Fill</label>
+            <ColorPicker
+              label="Fill"
+              value={fill ?? first.fill ?? 'transparent'}
+              mixed={fill == null}
+              variableId={fillVar}
+              variables={variables}
+              allowTransparent
+              onChange={(fill, fillVar) => set({ fill, fillVar, fillImage: null })}
+              onAddVariable={onAddVariable}
+            />
+            {anyFillImage && (
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => set({ fillImage: null })}
+              >
+                Clear image fill
+              </button>
+            )}
+          </>
+        )}
+        {isText && (
+          <>
+            <label className="field-label">Color</label>
+            <ColorPicker
+              label="Text color"
+              value={textColor ?? first.fill ?? '#1a1a1a'}
+              mixed={textColor == null}
+              variableId={fillVar}
+              variables={variables}
+              allowTransparent={false}
+              allowGradient={false}
+              onChange={(fill, fillVar) => set({ fill, fillVar })}
+              onAddVariable={onAddVariable}
+            />
+          </>
+        )}
+        {hasStroke && (
+          <>
+            <label className="field-label">Stroke</label>
+            <ColorPicker
+              label="Stroke"
+              value={stroke ?? first.stroke ?? '#1a1a1a'}
+              mixed={stroke == null}
+              variables={variables}
+              allowTransparent
+              onChange={(stroke) => set({ stroke })}
+              onAddVariable={onAddVariable}
+            />
+            <label className="field-label">Stroke width</label>
+            <NumberInput
+              min={0}
+              max={40}
+              value={strokeWidth}
+              placeholder="Mixed"
+              onChange={(n) => set({ strokeWidth: n })}
+            />
+          </>
+        )}
+        {hasRadius && (
+          <>
+            <label className="field-label">Corner radius</label>
+            <VariableNumberInput
+              label="Corner radius"
+              value={cornerRadius ?? first.cornerRadius ?? 0}
+              mixed={cornerRadius == null}
+              variableId={cornerRadiusVar}
+              variables={variables}
+              min={0}
+              max={200}
+              onChange={(value, variableId) =>
+                set({ cornerRadius: value, cornerRadiusVar: variableId })
+              }
+              onAddVariable={onAddVariable}
+            />
+          </>
+        )}
+        <label className="field-label">Opacity{opacity == null ? ' · Mixed' : ''}</label>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={opacity ?? first.opacity ?? 1}
+          onChange={(e) => set({ opacity: Number(e.target.value) })}
+        />
+      </div>
+    </>
+  )
+}
+
 type InspectorProps = {
   elements: WireElement[]
   selectedIds: string[]
   variables: DesignVariable[]
-  onUpdate: (id: string, patch: Partial<WireElement>) => void
+  onUpdate: (ids: string[], patch: Partial<WireElement>) => void
   onAddVariable: (variable: DesignVariable) => void
   onBringForward: () => void
   onSendBackward: () => void
@@ -132,11 +420,7 @@ export default function Inspector({
     ? elements.find((e) => e.groupId === groupId)
     : null
   const allowGroup = canGroupSelection ?? canGroup(elements, selectedIds)
-  const sharedRotation = selected.length
-    ? selected.every((el) => (el.rotation || 0) === (selected[0].rotation || 0))
-      ? Math.round(selected[0].rotation || 0)
-      : null
-    : null
+  const set = (patch: Partial<WireElement>) => onUpdate(selectedIds, patch)
 
   if (selected.length === 0) {
     return (
@@ -156,6 +440,7 @@ export default function Inspector({
             ? `${groupMeta?.groupName || 'Group'} · ${selected.length} atoms`
             : `${selected.length} selected`}
         </p>
+        {!groupId && <NameSection selected={selected} set={set} />}
         {groupId ? (
           <div className="inspector-section">
             <label className="field-label">Group name</label>
@@ -208,29 +493,13 @@ export default function Inspector({
             </button>
           </div>
         )}
-        <div className="inspector-section">
-          <label className="field-label">Rotation</label>
-          <div className="field-row">
-            <label>
-              °
-              <NumberInput
-                step={1}
-                value={sharedRotation}
-                placeholder="—"
-                onChange={(n) => onRotateSelection?.(n)}
-                aria-label="Rotation degrees"
-              />
-            </label>
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => onRotateSelection?.(0)}
-              title="Reset rotation"
-            >
-              Reset
-            </button>
-          </div>
-        </div>
+        <PropertySections
+          selected={selected}
+          variables={variables}
+          set={set}
+          onAddVariable={onAddVariable}
+          onRotateSelection={onRotateSelection}
+        />
         <div className="inspector-section">
           <label className="field-label">Layer</label>
           <div className="btn-row">
@@ -256,7 +525,6 @@ export default function Inspector({
   }
 
   const el = selected[0]
-  const set = (patch: Partial<WireElement>) => onUpdate(el.id, patch)
 
   return (
     <aside className="inspector">
@@ -266,15 +534,7 @@ export default function Inspector({
         {el.groupName ? ` · ${el.groupName}` : ''}
       </p>
 
-      <div className="inspector-section">
-        <label className="field-label">Name</label>
-        <input
-          type="text"
-          value={el.name || ''}
-          onChange={(e) => set({ name: e.target.value })}
-          aria-label="Element name"
-        />
-      </div>
+      <NameSection selected={selected} set={set} />
 
       {el.groupId && (
         <div className="inspector-section">
@@ -315,213 +575,13 @@ export default function Inspector({
         </button>
       </div>
 
-      <div className="inspector-section">
-        <label className="field-label">Position</label>
-        <div className="field-row">
-          <label>
-            X
-            <NumberInput
-              value={Math.round(el.x)}
-              onChange={(n) => set({ x: n })}
-            />
-          </label>
-          <label>
-            Y
-            <NumberInput
-              value={Math.round(el.y)}
-              onChange={(n) => set({ y: n })}
-            />
-          </label>
-        </div>
-        <div className="field-row">
-          <label>
-            W
-            <NumberInput
-              min={1}
-              value={Math.round(el.w)}
-              onChange={(n) => set({ w: n })}
-            />
-          </label>
-          <label>
-            H
-            <NumberInput
-              min={1}
-              value={Math.round(el.h)}
-              onChange={(n) => set({ h: n })}
-            />
-          </label>
-        </div>
-        <label className="field-label" style={{ marginTop: '0.65rem' }}>
-          Rotation
-        </label>
-        <div className="field-row">
-          <label>
-            °
-            <NumberInput
-              step={1}
-              value={Math.round(el.rotation || 0)}
-              onChange={(n) => onRotateSelection?.(n)}
-              aria-label="Rotation degrees"
-            />
-          </label>
-          <button
-            type="button"
-            className="btn-ghost"
-            onClick={() => onRotateSelection?.(0)}
-            title="Reset rotation"
-          >
-            Reset
-          </button>
-        </div>
-      </div>
-
-      {el.type === 'text' && (
-        <div className="inspector-section">
-          <label className="field-label">Font size</label>
-          <VariableNumberInput
-            label="Font size"
-            value={el.fontSize || 16}
-            variableId={el.fontSizeVar}
-            variables={variables}
-            min={8}
-            max={200}
-            onChange={(value, variableId) =>
-              set({ fontSize: value, fontSizeVar: variableId })
-            }
-            onAddVariable={onAddVariable}
-          />
-          <label className="field-label">Horizontal</label>
-          <div className="btn-row btn-row--icons">
-            {(
-              [
-                ['left', 'Align left'],
-                ['middle', 'Align center'],
-                ['right', 'Align right'],
-              ] as const
-            ).map(([align, label]) => (
-              <button
-                key={align}
-                type="button"
-                title={label}
-                aria-label={label}
-                className={`btn-ghost btn-icon${(el.textAlign || 'left') === align ? ' is-active' : ''}`}
-                onClick={() => set({ textAlign: align })}
-              >
-                <AlignIcon align={align} />
-              </button>
-            ))}
-          </div>
-          <label className="field-label">Vertical</label>
-          <div className="btn-row btn-row--icons">
-            {(
-              [
-                ['top', 'Align top'],
-                ['middle', 'Align middle'],
-                ['bottom', 'Align bottom'],
-              ] as const
-            ).map(([align, label]) => (
-              <button
-                key={align}
-                type="button"
-                title={label}
-                aria-label={label}
-                className={`btn-ghost btn-icon${(el.verticalAlign || 'top') === align ? ' is-active' : ''}`}
-                onClick={() => set({ verticalAlign: align })}
-              >
-                <VAlignIcon align={align} />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="inspector-section">
-        <label className="field-label">Appearance</label>
-        {el.type !== 'line' && el.type !== 'text' && (
-          <>
-            <label className="field-label">Fill</label>
-            <ColorPicker
-              label="Fill"
-              value={el.fill || 'transparent'}
-              variableId={el.fillVar}
-              variables={variables}
-              allowTransparent
-              onChange={(fill, fillVar) => set({ fill, fillVar, fillImage: null })}
-              onAddVariable={onAddVariable}
-            />
-            {el.fillImage && (
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={() => set({ fillImage: null })}
-              >
-                Clear image fill
-              </button>
-            )}
-          </>
-        )}
-        {el.type === 'text' && (
-          <>
-            <label className="field-label">Color</label>
-            <ColorPicker
-              label="Text color"
-              value={el.fill || '#1a1a1a'}
-              variableId={el.fillVar}
-              variables={variables}
-              allowTransparent={false}
-              allowGradient={false}
-              onChange={(fill, fillVar) => set({ fill, fillVar })}
-              onAddVariable={onAddVariable}
-            />
-          </>
-        )}
-        {el.type !== 'text' && (
-          <>
-            <label className="field-label">Stroke</label>
-            <ColorPicker
-              label="Stroke"
-              value={el.stroke || '#1a1a1a'}
-              variables={variables}
-              allowTransparent
-              onChange={(stroke) => set({ stroke })}
-              onAddVariable={onAddVariable}
-            />
-            <label className="field-label">Stroke width</label>
-            <NumberInput
-              min={0}
-              max={40}
-              value={el.strokeWidth ?? 2}
-              onChange={(n) => set({ strokeWidth: n })}
-            />
-          </>
-        )}
-        {(el.type === 'rect' || el.type === 'image') && (
-          <>
-            <label className="field-label">Corner radius</label>
-            <VariableNumberInput
-              label="Corner radius"
-              value={el.cornerRadius || 0}
-              variableId={el.cornerRadiusVar}
-              variables={variables}
-              min={0}
-              max={200}
-              onChange={(value, variableId) =>
-                set({ cornerRadius: value, cornerRadiusVar: variableId })
-              }
-              onAddVariable={onAddVariable}
-            />
-          </>
-        )}
-        <label className="field-label">Opacity</label>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={el.opacity ?? 1}
-          onChange={(e) => set({ opacity: Number(e.target.value) })}
-        />
-      </div>
+      <PropertySections
+        selected={selected}
+        variables={variables}
+        set={set}
+        onAddVariable={onAddVariable}
+        onRotateSelection={onRotateSelection}
+      />
 
       <button type="button" className="btn-danger" onClick={onDelete}>
         Delete

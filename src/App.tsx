@@ -233,6 +233,16 @@ export default function App() {
     [recordHistory],
   )
 
+  const updateElements = useCallback(
+    (ids: string[], patch: Partial<WireElement>) => {
+      if (!ids.length) return
+      recordHistory()
+      const idSet = new Set(ids)
+      setElements((prev) => prev.map((el) => (idSet.has(el.id) ? { ...el, ...patch } : el)))
+    },
+    [recordHistory],
+  )
+
   const place = useCallback(
     (
       tool: PlaceTool,
@@ -1268,7 +1278,7 @@ export default function App() {
           elements={elements}
           selectedIds={selectedIds}
           variables={variables}
-          onUpdate={updateElement}
+          onUpdate={updateElements}
           onAddVariable={handleAddVariable}
           onBringForward={() => {
             recordHistory()

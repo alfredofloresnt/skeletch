@@ -109,6 +109,8 @@ type ColorPickerProps = {
   /** When false, only the solid HSV palette is shown (e.g. editing a variable value). */
   showVariables?: boolean
   label?: string
+  /** Selected elements disagree on this paint; shows "Mixed" until a new value is picked. */
+  mixed?: boolean
   onChange: (value: string, variableId: string | null) => void
   onAddVariable?: (variable: DesignVariable) => void
 }
@@ -121,6 +123,7 @@ export default function ColorPicker({
   allowGradient = true,
   showVariables = true,
   label = 'Color',
+  mixed = false,
   onChange,
   onAddVariable,
 }: ColorPickerProps) {
@@ -493,11 +496,11 @@ export default function ColorPicker({
         aria-label={label}
       >
         <span
-          className={`color-picker-swatch${isTransparent ? ' is-transparent' : ''}`}
-          style={{ background: triggerBackground }}
+          className={`color-picker-swatch${mixed ? ' is-mixed' : isTransparent ? ' is-transparent' : ''}`}
+          style={{ background: mixed ? undefined : triggerBackground }}
         />
         <span className="color-picker-trigger-label">
-          {bound ? `$${bound.name}` : paintLabel(value)}
+          {mixed ? 'Mixed' : bound ? `$${bound.name}` : paintLabel(value)}
         </span>
       </button>
       {popover}
