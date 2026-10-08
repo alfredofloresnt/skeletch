@@ -22,6 +22,7 @@ import {
   toSolidCssColor,
 } from '../lib/paint'
 import { pathVerticesToD } from '../lib/pathGeometry'
+import { shadowFilter } from '../lib/shadow'
 import type { Rect, ResizeHandle, WireElement as WireElementModel } from '../lib/types'
 
 export type { CornerHandle }
@@ -312,6 +313,7 @@ function WireElement({
     height: Math.max(Math.abs(el.h) || (el.type === 'line' ? 1 : el.h), 1),
     zIndex: el.z,
     opacity: dimmed ? Math.min(el.opacity ?? 1, 1) * 0.28 : el.opacity,
+    filter: shadowFilter(el.shadows, el.rotation),
     ...rotationStyle(el.rotation),
   }
 
@@ -332,6 +334,7 @@ function WireElement({
           height: boxH,
           zIndex: el.z,
           opacity: dimmed ? Math.min(el.opacity ?? 1, 1) * 0.28 : el.opacity,
+          filter: style.filter,
           ...rotationStyle(el.rotation),
         }}
         data-id={el.id}

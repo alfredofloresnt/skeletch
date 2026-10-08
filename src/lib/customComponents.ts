@@ -1,5 +1,6 @@
 import { getBounds, uid } from './geometry'
 import { sanitizePathVertices } from './pathGeometry'
+import { sanitizeShadows } from './shadow'
 import type {
   AtomicType,
   CustomComponentDef,
@@ -36,6 +37,7 @@ export function selectionToParts(selected: WireElement[]): LayoutPart[] | null {
       strokeWidth: el.strokeWidth,
       opacity: el.opacity,
       cornerRadius: el.cornerRadius,
+      shadows: el.shadows,
       text: el.text,
       fontSize: el.fontSize,
       textAlign: el.textAlign,
@@ -71,6 +73,7 @@ function sanitizePart(part: LayoutPart): LayoutPart {
     strokeWidth: part.strokeWidth,
     opacity: part.opacity,
     cornerRadius: part.cornerRadius ?? 0,
+    shadows: sanitizeShadows(part.shadows),
     text: part.text,
     fontSize: part.fontSize,
     textAlign: (part.textAlign || 'left') as TextAlign,

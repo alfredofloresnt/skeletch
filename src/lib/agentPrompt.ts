@@ -48,6 +48,7 @@ interface WireElement {
   strokeWidth?: number             // px, 0 = no stroke
   opacity?: number                 // 0..1
   cornerRadius?: number            // rect / image only
+  shadows?: Shadow[]               // drop shadows following the visible shape; omit for none
   text?: string                    // "text" only; "\\n" for line breaks
   fontSize?: number                // "text" only, px
   textAlign?: "left" | "middle" | "right"
@@ -66,6 +67,13 @@ interface WireElement {
 //   | "linear-gradient(<deg>deg, <color> <0-100>%, <color> <0-100>%)"  (exactly 2 stops, 0deg = up)
 //   | "radial-gradient(circle, <color> <0-100>%, <color> <0-100>%)"    (exactly 2 stops)
 type Paint = string
+
+interface Shadow {
+  x: number; y: number             // offset in px (artboard space, ignores rotation)
+  blur: number                     // blur radius px, >= 0
+  color: string                    // "#rrggbb"
+  opacity: number                  // 0..1
+}
 
 interface PathVertex {
   x: number; y: number             // anchor, 0..100 in the element box

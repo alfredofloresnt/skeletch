@@ -1198,6 +1198,46 @@ textarea {
   display: block;
 }
 
+.inspector-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.inspector-section-header .field-label {
+  margin: 0;
+}
+
+.btn-add {
+  min-width: 1.6rem;
+  padding: 0.1rem 0.45rem !important;
+}
+
+.shadow-mixed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.shadow-item + .shadow-item {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.shadow-color-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.shadow-color-row .color-picker {
+  flex: 1;
+  min-width: 0;
+}
+
 /* —— Canvas —— */
 .stage-wrap {
   position: relative;

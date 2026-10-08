@@ -1,5 +1,12 @@
 import { canGroup, sharedGroupId } from '../lib/elements'
-import type { DesignVariable, TextAlign, VerticalAlign, WireElement } from '../lib/types'
+import { DEFAULT_SHADOW } from '../lib/shadow'
+import type {
+  DesignVariable,
+  ElementShadow,
+  TextAlign,
+  VerticalAlign,
+  WireElement,
+} from '../lib/types'
 import ColorPicker from './ColorPicker'
 import NumberInput from './NumberInput'
 import VariableNumberInput from './VariableNumberInput'
@@ -106,6 +113,92 @@ function NameSection({ selected, set }: SectionProps) {
         onChange={(e) => set({ name: e.target.value })}
         aria-label="Element name"
       />
+    </div>
+  )
+}
+
+function ShadowsSection({ selected, set }: SectionProps) {
+  const key = sharedValue(selected, (el) => JSON.stringify(el.shadows ?? []))
+  const shadows: ElementShadow[] = key == null ? [] : JSON.parse(key)
+  const setShadows = (next: ElementShadow[]) => set({ shadows: next.length ? next : undefined })
+  const update = (i: number, patch: Partial<ElementShadow>) =>
+    setShadows(shadows.map((s, j) => (j === i ? { ...s, ...patch } : s)))
+
+  return (
+    <div className="inspector-section">
+      <div className="inspector-section-header">
+        <label className="field-label">Shadows</label>
+        <button
+          type="button"
+          className="btn-ghost btn-add"
+          title="Add shadow"
+          aria-label="Add shadow"
+          onClick={() => setShadows([...shadows, { ...DEFAULT_SHADOW }])}
+        >
+          +
+        </button>
+      </div>
+      {key == null && (
+        <div className="shadow-mixed">
+          <span className="panel-hint">Mixed</span>
+          <button type="button" className="btn-ghost" onClick={() => setShadows([])}>
+            Remove all
+          </button>
+        </div>
+      )}
+      {shadows.map((shadow, i) => (
+        <div className="shadow-item" key={i}>
+          <div className="field-row">
+            <label>
+              X
+              <NumberInput value={shadow.x} onChange={(n) => update(i, { x: n })} />
+            </label>
+            <label>
+              Y
+              <NumberInput value={shadow.y} onChange={(n) => update(i, { y: n })} />
+            </label>
+          </div>
+          <div className="field-row">
+            <label>
+              Blur
+              <NumberInput
+                min={0}
+                max={200}
+                value={shadow.blur}
+                onChange={(n) => update(i, { blur: Math.max(0, n) })}
+              />
+            </label>
+            <label>
+              Opacity %
+              <NumberInput
+                min={0}
+                max={100}
+                value={Math.round(shadow.opacity * 100)}
+                onChange={(n) => update(i, { opacity: Math.min(100, Math.max(0, n)) / 100 })}
+              />
+            </label>
+          </div>
+          <div className="shadow-color-row">
+            <ColorPicker
+              label="Shadow color"
+              value={shadow.color}
+              allowTransparent={false}
+              allowGradient={false}
+              showVariables={false}
+              onChange={(color) => update(i, { color })}
+            />
+            <button
+              type="button"
+              className="btn-ghost btn-icon"
+              title="Remove shadow"
+              aria-label="Remove shadow"
+              onClick={() => setShadows(shadows.filter((_, j) => j !== i))}
+            >
+              −
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -366,6 +459,8 @@ function PropertySections({
           onChange={(e) => set({ opacity: Number(e.target.value) })}
         />
       </div>
+
+      <ShadowsSection selected={selected} set={set} />
     </>
   )
 }

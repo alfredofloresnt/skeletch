@@ -2,6 +2,7 @@ import { DEFAULTS } from './constants'
 import { drawImageCover, loadHtmlImage } from './fillImage'
 import { canvasPaintStyle, isVisiblePaint, toSolidCssColor } from './paint'
 import { pathVerticesToD } from './pathGeometry'
+import { shadowFilter, shadowRgba } from './shadow'
 import type { Artboard, WireElement } from './types'
 import { createZip, type ZipEntry } from './zip'
 
@@ -347,6 +348,38 @@ function paintShape(ctx: CanvasRenderingContext2D, el: WireElement, images: Imag
   ctx.restore()
 }
 
+/**
+ * Composite an element painted alone on `layer` with its shadows, so the shadow follows the
+ * finished shape (fill + stroke) exactly like the CSS drop-shadow filter on the canvas.
+ */
+function drawLayerWithShadows(
+  ctx: CanvasRenderingContext2D,
+  layer: HTMLCanvasElement,
+  el: WireElement,
+): void {
+  const shadows = el.shadows || []
+  ctx.save()
+  if (typeof ctx.filter === 'string') {
+    // The layer is already rotated, so offsets stay in artboard space (rotation 0).
+    ctx.filter = shadowFilter(shadows) || 'none'
+    ctx.drawImage(layer, 0, 0)
+    ctx.restore()
+    return
+  }
+  // No canvas filter support: draw each shadow alone by moving the layer out of view
+  // and offsetting its shadow back into place, then the element on top.
+  const away = layer.width + 1000
+  for (const s of shadows) {
+    ctx.shadowOffsetX = s.x + away
+    ctx.shadowOffsetY = s.y
+    ctx.shadowBlur = s.blur
+    ctx.shadowColor = shadowRgba(s.color, s.opacity)
+    ctx.drawImage(layer, -away, 0)
+  }
+  ctx.restore()
+  ctx.drawImage(layer, 0, 0)
+}
+
 async function renderArtboard(
   artboard: Artboard,
   elements: WireElement[],
@@ -373,8 +406,24 @@ async function renderArtboard(
     }),
   )
 
+  let layer: HTMLCanvasElement | null = null
   const sorted = [...elements].sort((a, b) => a.z - b.z)
-  for (const el of sorted) paintShape(ctx, el, images)
+  for (const el of sorted) {
+    if (!el.shadows?.length) {
+      paintShape(ctx, el, images)
+      continue
+    }
+    if (!layer) {
+      layer = document.createElement('canvas')
+      layer.width = canvas.width
+      layer.height = canvas.height
+    }
+    const layerCtx = layer.getContext('2d')
+    if (!layerCtx) throw new Error('Could not get canvas context')
+    layerCtx.clearRect(0, 0, layer.width, layer.height)
+    paintShape(layerCtx, el, images)
+    drawLayerWithShadows(ctx, layer, el)
+  }
   return canvas
 }
 

@@ -1,6 +1,7 @@
 import { createArtboard } from './artboards'
 import { sanitizeComponents } from './customComponents'
 import { sanitizePathVertices } from './pathGeometry'
+import { sanitizeShadows } from './shadow'
 import { sanitizeVariable } from './variables'
 import type {
   Artboard,
@@ -19,7 +20,7 @@ export const WIREFRAME_MIME = 'application/x-wireframe+json'
  * Portable document format (.wireframe)
  * v2: artboards[] + activeArtboardId + elements with artboardId
  * optional variables[] + components[] (project custom components)
- * optional fillVar / fontSizeVar / cornerRadiusVar on elements
+ * optional fillVar / fontSizeVar / cornerRadiusVar / shadows on elements
  * v1: singular artboard + presetId (migrated on parse)
  */
 
@@ -85,6 +86,7 @@ function sanitizeElement(el: WireElement, fallbackArtboardId?: string): WireElem
     strokeWidth: el.strokeWidth,
     opacity: el.opacity,
     cornerRadius: el.cornerRadius ?? 0,
+    shadows: sanitizeShadows(el.shadows),
     text: el.text,
     fontSize: el.fontSize,
     textAlign: (el.textAlign || 'left') as TextAlign,

@@ -98,6 +98,19 @@ export interface Artboard {
   presetId: string
 }
 
+/** Drop shadow cast by the element's visible shape. */
+export interface ElementShadow {
+  /** Offset in px, in artboard space (unaffected by the element's rotation). */
+  x: number
+  y: number
+  /** Blur radius in px. */
+  blur: number
+  /** "#rrggbb" */
+  color: string
+  /** 0..1 */
+  opacity: number
+}
+
 /** Partial layout atom before ids / z are assigned. */
 export interface LayoutPart {
   type: AtomicType
@@ -114,6 +127,8 @@ export interface LayoutPart {
   strokeWidth?: number
   opacity?: number
   cornerRadius?: number
+  /** Drop shadows, painted in order (each one also shadows the previous). */
+  shadows?: ElementShadow[]
   text?: string
   fontSize?: number
   textAlign?: TextAlign
