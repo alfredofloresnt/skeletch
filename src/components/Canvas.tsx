@@ -990,6 +990,13 @@ export default function Canvas({
     e.stopPropagation()
     e.preventDefault()
 
+    // preventDefault keeps the text editor focused, so commit it explicitly
+    // before selecting the pressed element.
+    if (editingTextId && editingTextId !== id) {
+      const active = document.activeElement
+      if (active instanceof HTMLElement) active.blur()
+    }
+
     const el = elements.find((x) => x.id === id)
     if (el) {
       onActiveArtboard(el.artboardId)
